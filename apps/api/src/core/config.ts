@@ -47,6 +47,10 @@ const schema = z
     SESSION_IDLE_MINUTES: z.coerce.number().int().min(5).max(240).default(30),
     SESSION_ABSOLUTE_HOURS: z.coerce.number().int().min(1).max(24).default(12),
 
+    // General per-IP request budget per API replica (requests per minute). Sign-in and
+    // code checks have their own, much stricter, database-backed limits.
+    RATE_LIMIT_PER_IP_PER_MIN: z.coerce.number().int().min(60).max(100_000).default(600),
+
     // Change requests expire if not decided in this many days.
     CHANGE_REQUEST_TTL_DAYS: z.coerce.number().int().min(1).max(30).default(7)
   })

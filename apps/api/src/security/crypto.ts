@@ -8,7 +8,7 @@
  *     prefix so keys can be rotated: "v1:<iv>:<tag>:<ciphertext>" (base64url).
  *   - Tokens: 256-bit random values; only their SHA-256 is stored.
  */
-import { createCipheriv, createDecipheriv, createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomInt, scrypt, timingSafeEqual } from 'node:crypto';
 import { AppError } from '../core/errors.js';
 
 // ---------------------------------------------------------------------------
@@ -89,11 +89,10 @@ export function passwordProblems(password: string, username: string): string[] {
 /** Generates a one-time password for new accounts: 20 chars from an unambiguous alphabet. */
 export function generateOneTimePassword(): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-  const bytes = randomBytes(20);
   let out = '';
-  // Modulo bias: 256 % 57 = 28, so a few characters are marginally likelier; acceptable for a
-  // temporary password that must be changed at first sign-in (~117 bits of entropy).
-  for (const b of bytes) out += alphabet[b % alphabet.length];
+  // randomInt uses rejection sampling, so every character is equally likely
+  // (no modulo bias). 20 chars from 57 symbols ≈ 117 bits of entropy.
+  for (let i = 0; i < 20; i++) out += alphabet[randomInt(alphabet.length)];
   return out;
 }
 

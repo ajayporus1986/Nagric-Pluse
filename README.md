@@ -8,11 +8,12 @@ A public-grievance and accountability platform built one district at a time. The
 | --- | --- |
 | `packages/shared` | Role catalogue, scope levels, decision lattice, module manifest schema, hi/en messages |
 | `packages/policy` | Pure policy resolver: availability (module → feature → realm → kill switch → election overlay) and authorization, with a trace |
-| `apps/api` | Fastify API (modular monolith; each module owns its schema) |
-| `apps/worker` | Background jobs: audit relay, checkpoint signing, kill-switch expiry |
+| `apps/api` | Fastify API (modular monolith; each module owns its schema) and the background worker (`dist/worker/main.js`: audit relay, checkpoint signing, expiry) |
 | `apps/web` | Admin and citizen web app (Hindi and English) |
 | `db/migrations` | Ordered SQL migrations |
-| `docker` | Production images and compose file |
+| `docker` | Production images, nginx config and compose file |
+| `districts` | District packages (one per district) |
+| `docs` | Operations guide and the generated error-code reference |
 
 ## Lego control model
 
@@ -28,7 +29,10 @@ Everything that can be switched is a **module** with **features**, and every fea
 
 ```bash
 pnpm install
-pnpm build && pnpm test
+pnpm build
+DATABASE_URL=postgres://postgres:<pw>@127.0.0.1:5432/postgres pnpm test   # unit + integration (disposable server)
+DATABASE_URL=... pnpm --filter @np/web e2e                                 # browser end-to-end
+node scripts/gen-error-docs.mjs                                           # after changing error codes
 ```
 
-Requires Node 22 and pnpm 10. See `SECURITY.md` before contributing.
+Requires Node 22, pnpm 10 and Postgres 16 for integration tests. Deployment: [docs/operations.md](docs/operations.md). Error codes: [docs/error-codes.md](docs/error-codes.md). Read `SECURITY.md` before contributing.

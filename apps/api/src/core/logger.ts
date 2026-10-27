@@ -19,7 +19,9 @@ export const REDACT_PATHS = [
   '*.password',
   '*.currentPassword',
   '*.newPassword',
-  '*.code',
+  // TOTP codes only appear in request bodies; error objects keep their catalogue `code`.
+  'body.code',
+  '*.body.code',
   '*.token',
   '*.csrfToken',
   '*.secret',

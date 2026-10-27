@@ -127,7 +127,7 @@ export async function buildApp(deps: AppDeps, routes: (app: App, deps: AppDeps) 
     }
   });
 
-  const generalLimiter = new MemoryRateLimiter(600, 60_000); // 600 requests/min/IP per replica
+  const generalLimiter = new MemoryRateLimiter(cfg.RATE_LIMIT_PER_IP_PER_MIN, 60_000); // per IP, per replica
   const cookieName = sessionCookieName(cfg.COOKIE_SECURE);
 
   // ---- onRequest: rate limit, origin, session, access kind, CSRF ----------
@@ -224,7 +224,7 @@ export async function buildApp(deps: AppDeps, routes: (app: App, deps: AppDeps) 
     req.errCode = e.code;
     const spec = ERRORS[e.code];
     // Faults log the full error with stack; expected user errors log only code and detail.
-    const fields = { reqId: req.id, errCode: e.code, userId: req.auth?.userId, detail: e.detail, route: req.routeOptions.url };
+    const fields = { errCode: e.code, userId: req.auth?.userId, detail: e.detail, route: req.routeOptions.url };
     if (spec.level === 'error' || spec.level === 'fatal') req.log.error({ ...fields, err: e.cause ?? err }, e.message);
     else req.log[spec.level](fields, e.message);
     void reply.status(e.status).send(errorBody(e.code, req.locale, req.id, e.fields));
@@ -239,7 +239,6 @@ export async function buildApp(deps: AppDeps, routes: (app: App, deps: AppDeps) 
   app.addHook('onResponse', async (req, reply) => {
     req.log.info(
       {
-        reqId: req.id,
         method: req.method,
         route: req.routeOptions.url,
         status: reply.statusCode,
