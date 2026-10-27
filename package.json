@@ -1,0 +1,29 @@
+{
+  "name": "nagrik-pulse",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Nagrik Pulse district pod: federated grievance and accountability platform (v2 architecture)",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "pnpm -r run build",
+    "typecheck": "pnpm -r run typecheck",
+    "lint": "eslint .",
+    "test": "pnpm -r run test",
+    "db:migrate": "pnpm --filter @np/api run db:migrate",
+    "admin:bootstrap": "pnpm --filter @np/api run admin:bootstrap",
+    "dev:api": "pnpm --filter @np/api run dev",
+    "dev:web": "pnpm --filter @np/web run dev",
+    "dev:worker": "pnpm --filter @np/worker run dev"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "eslint": "^9.17.0",
+    "globals": "^15.14.0",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.19.0"
+  }
+}
