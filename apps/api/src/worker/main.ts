@@ -22,6 +22,7 @@ const env = z
     DATABASE_URL_IAM: z.string().url().optional(),
     AUDIT_SIGNING_KEY_FILE: z.string().optional(),
     RELAY_INTERVAL_MS: z.coerce.number().int().min(100).default(1000),
+    CHECKPOINT_TICK_MS: z.coerce.number().int().min(1000).default(30_000),
     CHECKPOINT_MIN_ROWS: z.coerce.number().int().min(1).default(1000),
     CHECKPOINT_MAX_AGE_MS: z.coerce.number().int().min(10_000).default(300_000)
   })
@@ -83,7 +84,7 @@ async function main(): Promise<void> {
     every('expireRecords', 60_000, 'NP-WORK-0001', () => expireRecords(pools.platform)),
     every('cleanupIam', 3_600_000, 'NP-WORK-0001', () => cleanupIam(pools.iam))
   ];
-  if (key) timers.push(every('signCheckpoint', 30_000, 'NP-WORK-0003', () => signCheckpointIfDue(pools.relay, key, env.CHECKPOINT_MIN_ROWS, env.CHECKPOINT_MAX_AGE_MS, log)));
+  if (key) timers.push(every('signCheckpoint', env.CHECKPOINT_TICK_MS, 'NP-WORK-0003', () => signCheckpointIfDue(pools.relay, key, env.CHECKPOINT_MIN_ROWS, env.CHECKPOINT_MAX_AGE_MS, log)));
 
   const shutdown = async (signal: string) => {
     log.info({ signal }, 'worker stopping');

@@ -1,0 +1,116 @@
+/** Response shapes of the API used by the console (kept in one place for review). */
+import type { Action, Decision } from '@np/shared';
+
+export interface SessionInfo {
+  user: { id: string; username: string; displayName: string; locale: 'hi' | 'en' };
+  next: 'CHANGE_PASSWORD' | 'MFA_ENROLL' | 'MFA_VERIFY' | 'READY';
+  csrfToken: string;
+  assignments: { role: string; nodeId: string; nodeNameEn: string; nodeNameHi: string; level?: string }[];
+}
+
+export interface TreeNode {
+  id: string;
+  level: string;
+  lgdCode: string | null;
+  nameEn: string;
+  nameHi: string;
+  childCount: number;
+  children?: TreeNode[];
+}
+
+export type Capabilities = Record<string, Partial<Record<Action, Decision>>>;
+
+export interface Localized {
+  en: string;
+  hi: string;
+}
+
+export interface FeatureState {
+  code: string;
+  name: Localized;
+  actions: Action[];
+  invariant: boolean;
+  explicit: 'ENABLED' | 'DISABLED' | 'INHERIT';
+  available: boolean;
+  trace: { step: string; decision: Decision; detail: string }[];
+}
+
+export interface ModuleState {
+  id: string;
+  version: string;
+  name: Localized;
+  realm: string;
+  invariant: boolean;
+  defaultEnabled: boolean;
+  requires: string[];
+  explicit: 'ENABLED' | 'DISABLED' | 'INHERIT';
+  killSwitch: { expiresAt: string } | null;
+  features: FeatureState[];
+}
+
+export interface ChangeRequest {
+  id: string;
+  nodeId: string;
+  kind: string;
+  payload: Record<string, unknown>;
+  reason: string;
+  impact: { type: string; lines?: { featureCode: string; from: boolean; to: boolean; nodes: number; sample: string[] }[]; truncated?: boolean; role?: string; before?: string[]; after?: string[]; note?: string };
+  status: 'PENDING' | 'APPLIED' | 'REJECTED' | 'EXPIRED' | 'WITHDRAWN';
+  requiredApprovals: number;
+  proposedBy: string;
+  proposedByName?: string;
+  proposedAt: string;
+  expiresAt: string;
+  decidedAt: string | null;
+  outcome: Record<string, unknown> | null;
+  votes: { approverId: string; approverName?: string; verdict: 'APPROVE' | 'REJECT'; comment: string | null; at: string }[];
+}
+
+export interface StaffUser {
+  id: string;
+  username: string;
+  displayName: string;
+  status: 'ACTIVE' | 'DISABLED';
+  totpEnrolled: boolean;
+  mustChangePassword: boolean;
+  createdAt: string;
+  roles: { role: string; nodeId: string; assignmentId: string }[];
+}
+
+export interface RoleInfo {
+  code: string;
+  realm: string;
+  nameEn: string;
+  nameHi: string;
+  sensitive: boolean;
+  levels: string[];
+}
+
+export interface KillSwitch {
+  id: string;
+  moduleId: string;
+  nodeId: string;
+  reason: string;
+  activatedAt: string;
+  expiresAt: string;
+  clearedAt: string | null;
+  ratifiedBy: string | null;
+  active: boolean;
+}
+
+export interface AuditEvent {
+  seq: string;
+  occurredAt: string;
+  recordedAt: string;
+  actorId: string | null;
+  actorRoles: string[];
+  action: string;
+  featureCode: string | null;
+  scopePath: string | null;
+  targetType: string | null;
+  targetId: string | null;
+  decision: Decision | null;
+  ip: string | null;
+  detail: Record<string, unknown>;
+  hash: string;
+}
