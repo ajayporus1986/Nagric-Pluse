@@ -29,7 +29,7 @@ export const featureSchema = z
     for (const [role, acts] of Object.entries(f.defaultGrants)) {
       for (const a of acts) {
         if (!f.actions.includes(a)) {
-          ctx.addIssue({ code: z.ZodIssueCode.custom, message: `grant ${role}:${a} is not an action of ${f.code}` });
+          ctx.addIssue({ code: 'custom', message: `grant ${role}:${a} is not an action of ${f.code}` });
         }
       }
     }
@@ -51,19 +51,19 @@ export const manifestSchema = z
     const seen = new Set<string>();
     for (const f of m.features) {
       if (!f.code.startsWith(`${m.id}.`)) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `feature ${f.code} must start with "${m.id}."` });
+        ctx.addIssue({ code: 'custom', message: `feature ${f.code} must start with "${m.id}."` });
       }
-      if (seen.has(f.code)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: `duplicate feature ${f.code}` });
+      if (seen.has(f.code)) ctx.addIssue({ code: 'custom', message: `duplicate feature ${f.code}` });
       seen.add(f.code);
       if (f.invariant && !m.invariant) {
         // An invariant feature inside a switchable module would be unreachable when the module is off.
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `invariant feature ${f.code} requires an invariant module` });
+        ctx.addIssue({ code: 'custom', message: `invariant feature ${f.code} requires an invariant module` });
       }
     }
     if (m.invariant && !m.defaultEnabled) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'invariant modules must be enabled by default' });
+      ctx.addIssue({ code: 'custom', message: 'invariant modules must be enabled by default' });
     }
-    if (m.requires.includes(m.id)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'module cannot require itself' });
+    if (m.requires.includes(m.id)) ctx.addIssue({ code: 'custom', message: 'module cannot require itself' });
   });
 
 export type ModuleManifest = z.output<typeof manifestSchema>;

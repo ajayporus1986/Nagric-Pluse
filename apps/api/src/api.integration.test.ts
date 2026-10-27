@@ -178,7 +178,7 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     expect(r.json().error.requestId).toBe(r.headers['x-request-id']);
     const v = await app.inject({ method: 'POST', url: '/api/v1/auth/login', payload: { username: '' } });
     expect(v.json().error.code).toBe('NP-VAL-0001');
-    expect(v.json().error.fields.length).toBeGreaterThan(0);
+    expect(v.json().error.fields).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'username' }), expect.objectContaining({ path: 'password' })]));
     const hi = await app.inject({ url: '/api/v1/modules?nodeId=D144', headers: { 'accept-language': 'hi-IN' } });
     expect(hi.json().error).toMatchObject({ code: 'NP-AUTH-0001', message: 'कृपया साइन इन करें।' });
   });

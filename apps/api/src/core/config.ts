@@ -39,7 +39,8 @@ const schema = z
 
     // Web security.
     PUBLIC_ORIGIN: z.string().url(), // exact origin of the admin console, used for Origin checks
-    COOKIE_SECURE: bool.default('true'),
+    // prefault: the default string is parsed (and transformed to a boolean) like a real value.
+    COOKIE_SECURE: bool.prefault('true'),
     TRUST_PROXY: z.coerce.number().int().min(0).max(5).default(0), // number of reverse-proxy hops to trust
 
     // Session lifetimes.
@@ -53,17 +54,17 @@ const schema = z
     // Production must use one database role per module, never a shared URL.
     if (c.NODE_ENV === 'production') {
       for (const k of ['DATABASE_URL_PLATFORM', 'DATABASE_URL_IAM', 'DATABASE_URL_AUDIT'] as const) {
-        if (!c[k]) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [k], message: 'required in production' });
+        if (!c[k]) ctx.addIssue({ code: 'custom', path: [k], message: 'required in production' });
       }
-      if (!c.COOKIE_SECURE) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['COOKIE_SECURE'], message: 'must be true in production' });
-      if (!c.PUBLIC_ORIGIN.startsWith('https://')) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['PUBLIC_ORIGIN'], message: 'must be https in production' });
+      if (!c.COOKIE_SECURE) ctx.addIssue({ code: 'custom', path: ['COOKIE_SECURE'], message: 'must be true in production' });
+      if (!c.PUBLIC_ORIGIN.startsWith('https://')) ctx.addIssue({ code: 'custom', path: ['PUBLIC_ORIGIN'], message: 'must be https in production' });
     } else if (!c.DATABASE_URL && !(c.DATABASE_URL_PLATFORM && c.DATABASE_URL_IAM && c.DATABASE_URL_AUDIT)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['DATABASE_URL'], message: 'set DATABASE_URL or all per-module URLs' });
+      ctx.addIssue({ code: 'custom', path: ['DATABASE_URL'], message: 'set DATABASE_URL or all per-module URLs' });
     }
     // The active key id must exist in the keyring.
     const ids = c.FIELD_ENCRYPTION_KEYS.map((k) => k.split(':')[0]);
     if (!ids.includes(c.FIELD_ENCRYPTION_ACTIVE_KEY)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['FIELD_ENCRYPTION_ACTIVE_KEY'], message: 'not present in FIELD_ENCRYPTION_KEYS' });
+      ctx.addIssue({ code: 'custom', path: ['FIELD_ENCRYPTION_ACTIVE_KEY'], message: 'not present in FIELD_ENCRYPTION_KEYS' });
     }
   });
 

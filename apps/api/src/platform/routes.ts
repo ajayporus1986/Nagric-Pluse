@@ -154,7 +154,7 @@ export function registerPlatformRoutes(app: App, deps: AppDeps): void {
       config: { access: { kind: 'feature', feature: 'platform.change_requests', action: 'create', node: (req) => (req.body as { nodeId: string }).nodeId } },
       schema: {
         body: z
-          .object({ nodeId, kind: z.enum(CHANGE_KINDS as [ChangeKind, ...ChangeKind[]]), payload: z.record(z.unknown()), reason: z.string().trim().min(10).max(2000) })
+          .object({ nodeId, kind: z.enum(CHANGE_KINDS as [ChangeKind, ...ChangeKind[]]), payload: z.record(z.string(), z.unknown()), reason: z.string().trim().min(10).max(2000) })
           .strict()
       }
     },
