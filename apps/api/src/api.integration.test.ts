@@ -141,6 +141,8 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     const log = createLogger('api-test', cfg.LOG_LEVEL);
     pools = createPools(cfg, log);
     relayPool = new pg.Pool({ connectionString: roleUrl('relay'), max: 2 });
+    // Dropping the database at teardown terminates idle connections; that is expected, not a failure.
+    relayPool.on('error', () => undefined);
     await registerManifests(pools.platform, DEMO, log);
     policy = new PolicyService(pools.platform, cfg.db.platform, log);
     await policy.start();
