@@ -102,6 +102,7 @@ const en = {
   revokeRole: 'Propose removal',
   disable: 'Disable now',
   enable: 'Propose re-enable',
+  proposeDisable: 'Propose disable',
   resetCredentials: 'Propose credential reset',
   role: 'Role',
   // Kill switch
@@ -226,6 +227,7 @@ const hi: Dict = {
   revokeRole: 'हटाने का प्रस्ताव',
   disable: 'अभी निष्क्रिय करें',
   enable: 'पुनः सक्रिय करने का प्रस्ताव',
+  proposeDisable: 'निष्क्रिय करने का प्रस्ताव',
   resetCredentials: 'पासवर्ड रीसेट का प्रस्ताव',
   role: 'भूमिका',
   killTitle: 'आपात रोक',

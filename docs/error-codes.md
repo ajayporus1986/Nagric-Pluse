@@ -123,6 +123,7 @@ Every failure carries one of these codes in the API response (`error.code`), in 
 | --- | --- | --- | --- | --- |
 | `NP-USER-0001` | 409 | info | This username is already taken. | यह उपयोगकर्ता नाम पहले से लिया गया है। |
 | `NP-USER-0002` | 404 | info | User not found. | उपयोगकर्ता नहीं मिला। |
+| `NP-USER-0003` | 409 | warn | This account holds an oversight role; disabling it needs a change request approved by a quorum. | इस खाते के पास निगरानी भूमिका है; इसे निष्क्रिय करने के लिए कोरम-स्वीकृत परिवर्तन अनुरोध आवश्यक है। |
 
 ## Audit ledger
 

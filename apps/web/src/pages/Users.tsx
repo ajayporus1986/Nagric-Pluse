@@ -28,6 +28,8 @@ export function UsersPage({ nodeId, nodeLevel, caps, myUserId }: { nodeId: strin
     const r = roles.data?.roles.find((x) => x.code === code);
     return r ? (locale === 'hi' ? r.nameHi : r.nameEn) : code;
   };
+  /** True if the account holds any oversight role: such accounts are disabled only by quorum. */
+  const holdsSensitive = (u: StaffUser) => u.roles.some((r) => roles.data?.roles.find((x) => x.code === r.role)?.sensitive);
   // Only roles assignable at this area's level are offered.
   const assignable = roles.data?.roles.filter((r) => r.levels.includes(nodeLevel)) ?? [];
 
@@ -113,7 +115,12 @@ export function UsersPage({ nodeId, nodeLevel, caps, myUserId }: { nodeId: strin
                     {t('grantRole')}
                   </button>
                 )}
-                {u.id !== myUserId && canUpdate && u.status === 'ACTIVE' && (
+                {u.id !== myUserId && canPropose && u.status === 'ACTIVE' && holdsSensitive(u) && (
+                  <button type="button" className="danger small" onClick={() => setProposal({ title: `${t('proposeDisable')}: ${u.username}`, nodeId, kind: 'USER_DISABLE', payload: { userId: u.id } })}>
+                    {t('proposeDisable')}
+                  </button>
+                )}
+                {u.id !== myUserId && canUpdate && u.status === 'ACTIVE' && !holdsSensitive(u) && (
                   <button type="button" className="danger small" onClick={() => setDisableFor(u)}>
                     {t('disable')}
                   </button>

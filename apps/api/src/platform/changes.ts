@@ -37,7 +37,8 @@ export const PAYLOADS = {
   KILL_SWITCH_RATIFY: z.object({ killSwitchId: z.string().uuid() }).strict(),
   QUORUM_CONFIG: z.object({ level: z.enum(SCOPE_LEVELS), required: z.number().int().min(2).max(9) }).strict(),
   USER_ENABLE: z.object({ userId: z.string().uuid() }).strict(),
-  USER_RESET_CREDENTIALS: z.object({ userId: z.string().uuid() }).strict()
+  USER_RESET_CREDENTIALS: z.object({ userId: z.string().uuid() }).strict(),
+  USER_DISABLE: z.object({ userId: z.string().uuid() }).strict()
 } as const;
 
 export type ChangeKind = keyof typeof PAYLOADS;
@@ -178,11 +179,13 @@ export async function validateChange(db: pg.PoolClient, state: PolicyState, kind
       break;
     }
     case 'USER_ENABLE':
+    case 'USER_DISABLE':
     case 'USER_RESET_CREDENTIALS': {
       const p = payload as { userId: string };
       const u = await db.query<{ status: string }>('SELECT status FROM iam.users WHERE id = $1', [p.userId]);
       if (!u.rows[0]) throw new AppError('NP-USER-0002', { userId: p.userId });
       if (kind === 'USER_ENABLE' && u.rows[0].status === 'ACTIVE') throw new AppError('NP-CR-0005', { reason: 'already active' });
+      if (kind === 'USER_DISABLE' && u.rows[0].status === 'DISABLED') throw new AppError('NP-CR-0005', { reason: 'already disabled' });
       // Every active role of the subject must sit inside the request node's subtree.
       const ra = await db.query<{ path: string }>(
         `SELECT n.path::text AS path FROM iam.role_assignments ra JOIN platform.scope_nodes n ON n.id = ra.node_id
@@ -365,6 +368,13 @@ export async function applyChange(
       await c.query(`UPDATE iam.users SET status = 'ACTIVE', failed_logins = 0, locked_until = NULL WHERE id = $1`, [p.userId]);
       await writeAudit(c, 'iam', { action: 'iam.user.enabled', actorId: finalApproverId, ip, targetType: 'user', targetId: p.userId!, detail: { changeRequestId: cr.id } });
       return {};
+    case 'USER_DISABLE': {
+      await c.query(`UPDATE iam.users SET status = 'DISABLED' WHERE id = $1`, [p.userId]);
+      // Signing out everywhere is part of disabling.
+      await c.query(`UPDATE iam.sessions SET revoked_at = now(), revoke_reason = 'account_disabled' WHERE user_id = $1 AND revoked_at IS NULL`, [p.userId]);
+      await writeAudit(c, 'iam', { action: 'iam.user.disabled', actorId: finalApproverId, ip, targetType: 'user', targetId: p.userId!, detail: { changeRequestId: cr.id } });
+      return {};
+    }
     case 'USER_RESET_CREDENTIALS': {
       const oneTimePassword = generateOneTimePassword();
       await c.query(

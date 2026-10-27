@@ -126,6 +126,9 @@ export function registerUserRoutes(app: App, deps: AppDeps): void {
           if (!isAncestorOrSelf(nodePath, r.path.split('.'))) {
             throw new AppError('NP-POL-0001', { reason: 'target has a role outside caller scope', role: r.role, roleSensitive: getRole(r.role)?.sensitive });
           }
+          // Oversight roles (governors, DPO, operators, reviewers…) can only be disabled by quorum,
+          // so no single person can lock the others out.
+          if (getRole(r.role)?.sensitive) throw new AppError('NP-USER-0003', { role: r.role });
         }
         await c.query(`UPDATE iam.users SET status = 'DISABLED' WHERE id = $1`, [req.params.id]);
         const n = await revokeUserSessions(c, req.params.id, 'account_disabled');

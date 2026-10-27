@@ -130,6 +130,7 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     for (const g of ['gov1', 'gov2', 'gov3']) await seedUser(owner, g, [['REALM_GOVERNOR', 'D144']]);
     await seedUser(owner, 'sre1', [['PLATFORM_OPERATOR', 'D144']]);
     await seedUser(owner, 'obs1', [['OBSERVER', 'D144']]);
+    await seedUser(owner, 'clerk1', [['OFFICER', 'SUB_A']]);
     await owner.end();
 
     const cfg = loadConfig({
@@ -313,11 +314,23 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     expect((await call(obs, 'GET', '/api/v1/capabilities?nodeId=SUB_B')).json().capabilities['demo.items']).toEqual({ view: 'ALLOW' });
   });
 
-  it('disables an account immediately and signs it out', async () => {
+  it('disables an ordinary account immediately and signs it out', async () => {
     const g = await signIn('gov1');
-    const o = await signIn('obs1');
-    const r = await call(g, 'POST', `/api/v1/users/${ids.get('obs1')}/disable`, { nodeId: 'D144', reason: 'left the department today' });
+    const clerk = await signIn('clerk1');
+    const r = await call(g, 'POST', `/api/v1/users/${ids.get('clerk1')}/disable`, { nodeId: 'D144', reason: 'left the department today' });
     expect(r.json().sessionsRevoked).toBeGreaterThan(0);
+    expect((await call(clerk, 'GET', '/api/v1/auth/session')).statusCode).toBe(401);
+  });
+
+  it('needs a quorum to disable an account with an oversight role', async () => {
+    const g1 = await signIn('gov1');
+    const g2 = await signIn('gov2');
+    // One governor cannot lock out another (or an observer) alone.
+    expect((await call(g1, 'POST', `/api/v1/users/${ids.get('gov3')}/disable`, { nodeId: 'D144', reason: 'trying to remove a colleague' })).json().error.code).toBe('NP-USER-0003');
+    const o = await signIn('obs1');
+    const p = await call(g1, 'POST', '/api/v1/change-requests', { nodeId: 'D144', kind: 'USER_DISABLE', payload: { userId: ids.get('obs1') }, reason: 'observer term ended today' });
+    expect(p.statusCode, p.body).toBe(201);
+    expect((await call(g2, 'POST', `/api/v1/change-requests/${p.json().id}/votes`, { verdict: 'APPROVE' })).json().status).toBe('APPLIED');
     expect((await call(o, 'GET', '/api/v1/auth/session')).statusCode).toBe(401);
   });
 
