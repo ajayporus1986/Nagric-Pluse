@@ -26,6 +26,7 @@ x-db-urls: &db-urls
   DATABASE_URL_REGISTRY: postgres://np_registry:${NP_DB_PASSWORD_REGISTRY:?}@db:5432/nagrik_pulse
   DATABASE_URL_CITIZEN: postgres://np_citizen:${NP_DB_PASSWORD_CITIZEN:?}@db:5432/nagrik_pulse
   DATABASE_URL_ORG: postgres://np_org:${NP_DB_PASSWORD_ORG:?}@db:5432/nagrik_pulse
+  DATABASE_URL_INTAKE: postgres://np_intake:${NP_DB_PASSWORD_INTAKE:?}@db:5432/nagrik_pulse
 
 services:
   db:
@@ -61,6 +62,7 @@ services:
       NP_DB_PASSWORD_REGISTRY: ${NP_DB_PASSWORD_REGISTRY:?}
       NP_DB_PASSWORD_CITIZEN: ${NP_DB_PASSWORD_CITIZEN:?}
       NP_DB_PASSWORD_ORG: ${NP_DB_PASSWORD_ORG:?}
+      NP_DB_PASSWORD_INTAKE: ${NP_DB_PASSWORD_INTAKE:?}
     depends_on: { db: { condition: service_healthy } }
     networks: [internal]
     read_only: true

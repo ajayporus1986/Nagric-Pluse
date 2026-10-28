@@ -152,6 +152,16 @@ Every failure carries one of these codes in the API response (`error.code`), in 
 | `NP-ORG-0002` | 409 | warn | This cannot be removed while other records still refer to it. | इसे हटाया नहीं जा सकता क्योंकि अन्य रिकॉर्ड अभी भी इससे जुड़े हैं। |
 | `NP-ORG-0003` | 400 | info | A parent entity must be in the same or an ancestor node. | मूल संस्था उसी या पूर्वज क्षेत्र में होनी चाहिए। |
 
+## Grievance intake
+
+| Code | HTTP | Log level | English | Hindi |
+| --- | --- | --- | --- | --- |
+| `NP-INTAKE-0001` | 404 | info | Grievance not found. | शिकायत नहीं मिली। |
+| `NP-INTAKE-0002` | 400 | info | A grievance must target a known service or organization, or state a subject on its own. | शिकायत किसी ज्ञात सेवा या संगठन से जुड़ी होनी चाहिए, या अपना विषय स्पष्ट बताए। |
+| `NP-INTAKE-0003` | 400 | info | That status change is not allowed from the current status. | वर्तमान स्थिति से यह बदलाव स्वीकार्य नहीं है। |
+| `NP-INTAKE-0004` | 403 | info | Grievance intake is not switched on here yet. | शिकायत दर्ज करना अभी यहाँ सक्रिय नहीं है। |
+| `NP-INTAKE-0005` | 400 | info | Only an authenticated citizen may file under their own identity; use ANONYMOUS otherwise. | केवल प्रमाणित नागरिक ही अपनी पहचान से दर्ज कर सकता है; अन्यथा गुमनाम विकल्प का उपयोग करें। |
+
 ## Citizen identity
 
 | Code | HTTP | Log level | English | Hindi |

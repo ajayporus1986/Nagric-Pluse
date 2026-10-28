@@ -6,8 +6,8 @@
 | --- | --- | --- |
 | `db` | `postgres:16` | — |
 | `migrate` (one-shot) | `api` image, `migrate.js` then `db-roles.js` | db as schema owner |
-| `api` | `api` image, `dist/server.js` | db as `np_platform`, `np_iam`, `np_audit`, `np_registry`, `np_citizen`, `np_org` |
-| `worker` | `api` image, `dist/worker/main.js` | db as `np_relay`, `np_platform`, `np_iam`, `np_citizen`, `np_org` |
+| `api` | `api` image, `dist/server.js` | db as `np_platform`, `np_iam`, `np_audit`, `np_registry`, `np_citizen`, `np_org`, `np_intake` |
+| `worker` | `api` image, `dist/worker/main.js` | db as `np_relay`, `np_platform`, `np_iam`, `np_citizen`, `np_org`, `np_intake` |
 | `web` | nginx serving the console, proxying `/api` | api |
 
 The API is stateless: run as many replicas as needed behind the web tier. Sessions, rate limits and policy live in Postgres; replicas pick up policy changes within about 100 ms through `LISTEN/NOTIFY`.
@@ -47,6 +47,7 @@ Migrations create NOLOGIN group roles with least-privilege grants. `db-roles.js`
 | `np_registry` | `np_registry_rw` | offices, posts, post holders, notified services (not `sla_days`, which only the platform role changes, and only via an approved change request) |
 | `np_citizen` | `np_citizen_rw` | citizen identity, OTP challenges, citizen sessions and rate limits — never touches `iam.*`, `registry.*` or any staff table |
 | `np_org` | `np_org_rw` | the org directory (`org.entities`): departments, statutory authorities, SPVs, SEZ offices and other service providers that `registry.services` and future modules reference |
+| `np_intake` | `np_intake_rw` | grievance intake (`intake.grievances`, `intake.grievance_events`): citizen/business/anonymous filings, their status history, and a read-only lookup into `registry.services`, `org.entities` and `citizen.citizens` needed at filing time |
 
 No service role can UPDATE or DELETE the audit ledger; triggers refuse it even for the owner.
 

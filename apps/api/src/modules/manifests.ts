@@ -198,6 +198,37 @@ const RAW: unknown[] = [
         defaultGrants: ALL_STAFF_VIEW
       }
     ]
+  },
+  {
+    id: 'intake',
+    version: '0.1.0',
+    name: { en: 'Grievance intake', hi: 'शिकायत दर्ज' },
+    realm: 'GOVERNMENT',
+    // Switchable: a district enables citizen-facing intake only once its
+    // registry/org data is ready, same pattern as the citizen module.
+    requires: ['platform', 'iam', 'registry', 'org', 'citizen'],
+    features: [
+      {
+        code: 'intake.grievances',
+        name: { en: 'Grievances', hi: 'शिकायतें' },
+        // Citizen filing is public (checked via PolicyService.featureAvailable,
+        // same as citizen.identity) and carries no staff role, so only the
+        // staff-facing view/update (status-triage) actions appear here.
+        // 'update' here means moving a grievance through its status machine
+        // (see intake/routes.ts TRANSITIONS), not editing its content.
+        actions: ['view', 'update'],
+        auditedActions: ['update'],
+        defaultGrants: {
+          ...ALL_STAFF_VIEW,
+          ASSISTED_AGENT: ['view', 'update'],
+          OFFICER: ['view', 'update'],
+          OFFICE_HEAD: ['view', 'update'],
+          DEPARTMENT_HEAD: ['view', 'update'],
+          DISTRICT_MAGISTRATE: ['view', 'update'],
+          AUTHORITY_CEO: ['view', 'update']
+        }
+      }
+    ]
   }
 ];
 
