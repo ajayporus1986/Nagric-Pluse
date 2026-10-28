@@ -22,7 +22,10 @@ import { PolicyService } from './policy/service.js';
 import { registerRoutes } from './routes.js';
 import { buildKeyRing, encryptField, hashPassword, type KeyRing } from './security/crypto.js';
 import { generateTotpSecret, totpAt } from './security/totp.js';
-import { cleanupCitizen, escalateOverdueCases, expireRecords, relayAudit, signCheckpointIfDue, sweepClosureConfirmations } from './worker/jobs.js';
+import {
+  cleanupCitizen, escalateOverdueCases, expireRecords, fireSlaAlerts, pushMonthlyRollup, relayAudit,
+  rollupPersonMetrics, rollupProcessMetrics, signCheckpointIfDue, sweepClosureConfirmations
+} from './worker/jobs.js';
 import { keyIdOf } from './audit/checkpoint.js';
 import type { OtpSender } from './citizen/otp-sender.js';
 
@@ -133,7 +136,8 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     const loginPw = randomBytes(12).toString('hex');
     for (const [suffix, group] of [
       ['platform', 'np_platform_rw'], ['iam', 'np_iam_rw'], ['audit', 'np_audit_reader'], ['relay', 'np_audit_relay'],
-      ['registry', 'np_registry_rw'], ['citizen', 'np_citizen_rw'], ['org', 'np_org_rw'], ['intake', 'np_intake_rw'], ['case', 'np_case_rw']
+      ['registry', 'np_registry_rw'], ['citizen', 'np_citizen_rw'], ['org', 'np_org_rw'], ['intake', 'np_intake_rw'], ['case', 'np_case_rw'],
+      ['accountability', 'np_accountability_rw']
     ]) {
       await admin.query(`CREATE ROLE np_t_${suffix}_${tag} LOGIN PASSWORD '${loginPw}' IN ROLE ${group}`);
     }
@@ -155,12 +159,17 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     await seedUser(owner, 'clerk1', [['OFFICER', 'SUB_A']]);
     await seedUser(owner, 'dm1', [['DISTRICT_MAGISTRATE', 'D144']]);
     await seedUser(owner, 'clerk2', [['OFFICER', 'SUB_A']]);
+    await seedUser(owner, 'depthead1', [['DEPARTMENT_HEAD', 'D144']]);
+    await seedUser(owner, 'reviewer1', [['INTEGRITY_REVIEWER', 'D144']]);
+    await seedUser(owner, 'state1', [['STATE_LEADERSHIP', 'UP']]);
+    await seedUser(owner, 'nat1', [['NATIONAL_LEADERSHIP', 'IN']]);
     await owner.end();
 
     const cfg = loadConfig({
       NODE_ENV: 'test', LOG_LEVEL: (process.env.TEST_LOG_LEVEL as string) ?? 'fatal', PUBLIC_ORIGIN: 'http://localhost:5173', COOKIE_SECURE: 'false',
       DATABASE_URL_PLATFORM: roleUrl('platform'), DATABASE_URL_IAM: roleUrl('iam'), DATABASE_URL_AUDIT: roleUrl('audit'), DATABASE_URL_REGISTRY: roleUrl('registry'),
       DATABASE_URL_CITIZEN: roleUrl('citizen'), DATABASE_URL_ORG: roleUrl('org'), DATABASE_URL_INTAKE: roleUrl('intake'), DATABASE_URL_CASE: roleUrl('case'),
+      DATABASE_URL_ACCOUNTABILITY: roleUrl('accountability'),
       FIELD_ENCRYPTION_KEYS: `v1:${ring.keys.get('v1')!.toString('base64')}`, FIELD_ENCRYPTION_ACTIVE_KEY: 'v1'
     });
     const log = createLogger('api-test', cfg.LOG_LEVEL);
@@ -181,7 +190,7 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     if (pools) await closePools(pools);
     await relayPool?.end();
     await admin.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
-    for (const s of ['platform', 'iam', 'audit', 'relay', 'registry', 'citizen', 'org', 'intake', 'case']) await admin.query(`DROP ROLE IF EXISTS np_t_${s}_${tag}`);
+    for (const s of ['platform', 'iam', 'audit', 'relay', 'registry', 'citizen', 'org', 'intake', 'case', 'accountability']) await admin.query(`DROP ROLE IF EXISTS np_t_${s}_${tag}`);
     await admin.end();
   });
 
@@ -860,6 +869,148 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
       ).json().error.code
     ).toBe('NP-CASE-0003');
 
+    await rl.end();
+  });
+
+  it('rolls up process/person KPIs, gates officer metrics on evidence, runs the due-process notice flow, fires SLA alerts, and logs a leadership pull', async () => {
+    const rl = new pg.Client({ connectionString: ownerUrl });
+    await rl.connect();
+    await rl.query(`DELETE FROM iam.rate_limits WHERE bucket LIKE 'login-ip:%'`);
+    await rl.query(`UPDATE iam.users SET status = 'ACTIVE', failed_logins = 0, locked_until = NULL WHERE username IN ('dm1','depthead1','reviewer1','state1','nat1','clerk1','clerk2')`);
+
+    const dm = await signIn('dm1');
+    const depthead = await signIn('depthead1');
+    const reviewer = await signIn('reviewer1');
+    const state = await signIn('state1');
+    const nat = await signIn('nat1');
+    const clerk1 = await signIn('clerk1');
+    const clerk2 = await signIn('clerk2');
+    const clerk1Id = ids.get('clerk1')!;
+
+    const dept = await call(dm, 'POST', '/api/v1/org/entities', { nodeId: 'D144', kind: 'DEPARTMENT', nameEn: 'Water Works', nameHi: 'जल कार्य' });
+    expect(dept.statusCode, dept.body).toBe(201);
+    const entityId = dept.json().id as string;
+
+    /** Files, assigns to clerk1, and resolves one grievance for a fresh citizen; backdates its SLA as requested. */
+    async function fileAndResolve(mobile: string, sla: 'MET' | 'BREACHED'): Promise<string> {
+      await app.inject({ method: 'POST', url: '/api/v1/citizen/otp/request', payload: { mobileNumber: mobile, nodeId: 'D144' } });
+      const otp = otpSender.sent.get(`+91${mobile}`)!;
+      const v = await app.inject({ method: 'POST', url: '/api/v1/citizen/otp/verify', payload: { mobileNumber: mobile, nodeId: 'D144', otp } });
+      const cCookie = citizenCookieOf(v);
+      const cCsrf = v.json().csrfToken as string;
+      const filed = await app.inject({
+        method: 'POST', url: '/api/v1/intake/grievances', headers: { cookie: cCookie, 'x-csrf-token': cCsrf },
+        payload: { nodeId: 'D144', entityId, subject: 'No water supply', description: 'Dry taps for three days.', complainant: { type: 'CITIZEN' } }
+      });
+      expect(filed.statusCode, filed.body).toBe(201);
+      const id = filed.json().id as string;
+      expect((await call(dm, 'POST', '/api/v1/case/assignments', { grievanceId: id, assigneeUserId: clerk1Id })).statusCode).toBe(201);
+      await rl.query(`UPDATE intake.grievances SET sla_days = 1, sla_due_at = now() ${sla === 'MET' ? '+' : '-'} interval '1 day' WHERE id = $1`, [id]);
+      if (sla === 'BREACHED') expect(await escalateOverdueCases(pools.case)).toBe(1);
+      expect((await call(dm, 'PATCH', `/api/v1/intake/grievances/${id}/status`, { toStatus: 'ACKNOWLEDGED' })).statusCode).toBe(200);
+      expect((await call(dm, 'PATCH', `/api/v1/intake/grievances/${id}/status`, { toStatus: 'IN_PROGRESS' })).statusCode).toBe(200);
+      expect((await call(dm, 'PATCH', `/api/v1/intake/grievances/${id}/status`, { toStatus: 'RESOLVED' })).statusCode).toBe(200);
+      return id;
+    }
+
+    const metId = await fileAndResolve('9123459980', 'MET');
+    const breachedId = await fileAndResolve('9123459981', 'BREACHED');
+
+    // ---- Process-level metrics: always computed, visible to any staff role. ----
+    // (dm1 is assigned AT D144, so it can see D144's own dashboard; clerk1 is
+    // assigned below it at SUB_A, which can see SUB_A and its own subtree but
+    // not its ancestor D144 -- the same upward-visibility rule every other
+    // module in this codebase already follows.)
+    expect(await rollupProcessMetrics(pools.accountability, 3)).toBeGreaterThan(0);
+    const dash = await call(dm, 'GET', '/api/v1/accountability/dashboard?nodeId=D144');
+    expect(dash.statusCode, dash.body).toBe(200);
+    const totals = dash.json().rows.reduce(
+      (acc: { filed: number; resolved: number; met: number; breached: number; escalated: number }, r: { filedCount: number; resolvedCount: number; slaMetCount: number; slaBreachedCount: number; escalatedCount: number }) => ({
+        filed: acc.filed + r.filedCount, resolved: acc.resolved + r.resolvedCount, met: acc.met + r.slaMetCount, breached: acc.breached + r.slaBreachedCount, escalated: acc.escalated + r.escalatedCount
+      }),
+      { filed: 0, resolved: 0, met: 0, breached: 0, escalated: 0 }
+    );
+    expect(totals.resolved).toBeGreaterThanOrEqual(2);
+    expect(totals.met).toBeGreaterThanOrEqual(1);
+    expect(totals.breached).toBeGreaterThanOrEqual(1);
+    expect(totals.escalated).toBeGreaterThanOrEqual(1);
+
+    // ---- Person-level metrics: evidence-gated, narrower audience. ----
+    // (The rollup groups by assignee across ALL of "case".assignments within
+    // the window, which also holds assignment rows from earlier tests in
+    // this shared suite -- so this checks clerk1's own row, not the rollup's
+    // total row count.)
+    // An unreachable threshold: no row for clerk1, not even an empty/zeroed
+    // one -- the gate is enforced in the computed data itself, not just
+    // filtered at read time.
+    await rollupPersonMetrics(pools.accountability, 30, 100, 100);
+    let officers = await call(depthead, 'GET', '/api/v1/accountability/officers?nodeId=D144');
+    expect(officers.json().rows.find((r: { assigneeUserId: string }) => r.assigneeUserId === clerk1Id)).toBeUndefined();
+    // Evidence now met (2 resolved, 2 distinct citizens): the row appears.
+    await rollupPersonMetrics(pools.accountability, 30, 2, 2);
+    officers = await call(depthead, 'GET', '/api/v1/accountability/officers?nodeId=D144');
+    const clerk1Row = officers.json().rows.find((r: { assigneeUserId: string }) => r.assigneeUserId === clerk1Id);
+    expect(clerk1Row.resolvedCount).toBeGreaterThanOrEqual(2);
+    expect(clerk1Row.distinctCitizens).toBeGreaterThanOrEqual(2);
+    // An ordinary officer (not department-head-and-up) has no grant on this narrower feature.
+    expect((await call(clerk1, 'GET', '/api/v1/accountability/officers?nodeId=D144')).json().error.code).toBe('NP-POL-0001');
+
+    // ---- Immediate SLA alerts, idempotent per (grievance, level). ----
+    expect(await fireSlaAlerts(pools.accountability)).toBeGreaterThanOrEqual(1);
+    expect(await fireSlaAlerts(pools.accountability)).toBe(0);
+
+    // ---- Due process: notice -> reply -> independent review -> appeal. ----
+    // The notice is filed at SUB_A, the officer's own assignment node:
+    // Lego authorizes downward (D144 -> SUB_A, for depthead/reviewer) but
+    // never upward, so clerk1/clerk2 (assigned only at SUB_A) could never
+    // act on a notice filed at the ancestor D144.
+    const badAssignee = await call(depthead, 'POST', '/api/v1/accountability/notices', {
+      assigneeUserId: '00000000-0000-0000-0000-000000000000', nodeId: 'SUB_A', metricRef: 'SLA adherence, Oct 2026', allegationSummary: 'High SLA-breach rate.'
+    });
+    expect(badAssignee.json().error.code).toBe('NP-ACC-0002');
+
+    const notice = await call(depthead, 'POST', '/api/v1/accountability/notices', {
+      assigneeUserId: clerk1Id, nodeId: 'SUB_A', metricRef: 'SLA adherence, Oct 2026', allegationSummary: 'One grievance breached its SLA.'
+    });
+    expect(notice.statusCode, notice.body).toBe(201);
+    const noticeId = notice.json().id as string;
+
+    // Reviewing before a reply exists is refused (wrong state).
+    expect((await call(reviewer, 'POST', `/api/v1/accountability/notices/${noticeId}/review`, { verdict: 'UPHELD' })).json().error.code).toBe('NP-ACC-0003');
+    // Only the named officer may reply.
+    expect((await call(clerk2, 'POST', `/api/v1/accountability/notices/${noticeId}/reply`, { replyText: 'Not mine.' })).json().error.code).toBe('NP-ACC-0004');
+    expect((await call(clerk1, 'POST', `/api/v1/accountability/notices/${noticeId}/reply`, { replyText: 'The ward had a main-line outage; evidence attached offline.' })).statusCode).toBe(200);
+
+    expect((await call(reviewer, 'POST', `/api/v1/accountability/notices/${noticeId}/review`, { verdict: 'UPHELD', note: 'Outage does not fully explain the delay.' })).statusCode).toBe(200);
+    // Only the named officer may appeal, and only once UPHELD.
+    expect((await call(clerk2, 'POST', `/api/v1/accountability/notices/${noticeId}/appeal`, { appealNote: 'Not mine.' })).json().error.code).toBe('NP-ACC-0004');
+    expect((await call(clerk1, 'POST', `/api/v1/accountability/notices/${noticeId}/appeal`, { appealNote: 'The outage records were not considered.' })).statusCode).toBe(200);
+
+    const noticeDetail = await call(depthead, 'GET', `/api/v1/accountability/notices/${noticeId}`);
+    expect(noticeDetail.json()).toMatchObject({ reviewStatus: 'APPEALED', reviewedBy: ids.get('reviewer1') });
+
+    // A reply after the window has passed is refused, even though nothing else about the notice changed.
+    const lapsed = await call(depthead, 'POST', '/api/v1/accountability/notices', {
+      assigneeUserId: clerk1Id, nodeId: 'SUB_A', metricRef: 'Second notice', allegationSummary: 'Second allegation.', replyWindowDays: 1
+    });
+    await rl.query(`UPDATE accountability.notices SET reply_due_at = now() - interval '1 day' WHERE id = $1`, [lapsed.json().id]);
+    expect((await call(clerk1, 'POST', `/api/v1/accountability/notices/${lapsed.json().id}/reply`, { replyText: 'Too late.' })).json().error.code).toBe('NP-ACC-0005');
+
+    // ---- On-demand leadership pull: logged, reason-coded, state/national only. ----
+    const badReason = await call(state, 'POST', '/api/v1/accountability/pulls', { nodeId: 'D144', reasonCode: 'NOT_A_REAL_REASON' });
+    expect(badReason.json().error.code).toBe('NP-ACC-0006');
+    const pull = await call(state, 'POST', '/api/v1/accountability/pulls', { nodeId: 'D144', reasonCode: 'ROUTINE_REVIEW', note: 'Monthly check-in.' });
+    expect(pull.statusCode, pull.body).toBe(201);
+    expect((await call(nat, 'POST', '/api/v1/accountability/pulls', { nodeId: 'IN', reasonCode: 'AUDIT' })).statusCode).toBe(201);
+    // District-level staff cannot issue a pull -- that is leadership's own role, not district staff's.
+    expect((await call(dm, 'POST', '/api/v1/accountability/pulls', { nodeId: 'D144', reasonCode: 'ROUTINE_REVIEW' })).json().error.code).toBe('NP-POL-0001');
+    const pullHistory = await call(state, 'GET', '/api/v1/accountability/pulls?nodeId=D144');
+    expect(pullHistory.json().pulls.some((p: { id: string }) => p.id === pull.json().id)).toBe(true);
+
+    // ---- Monthly push: materialize + log only (no state/national hub yet). ----
+    expect(typeof (await pushMonthlyRollup(pools.accountability))).toBe('number');
+
+    expect(metId).not.toBe(breachedId);
     await rl.end();
   });
 });

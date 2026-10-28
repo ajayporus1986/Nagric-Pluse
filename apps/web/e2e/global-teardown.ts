@@ -20,6 +20,6 @@ export default async function globalTeardown(): Promise<void> {
   const admin = new pg.Client({ connectionString: state.adminUrl });
   await admin.connect();
   await admin.query(`DROP DATABASE IF EXISTS ${state.db} WITH (FORCE)`);
-  for (const r of ['platform', 'iam', 'audit', 'relay', 'registry', 'citizen', 'org', 'intake', 'case']) await admin.query(`DROP ROLE IF EXISTS np_e2e_${r}`);
+  for (const r of ['platform', 'iam', 'audit', 'relay', 'registry', 'citizen', 'org', 'intake', 'case', 'accountability']) await admin.query(`DROP ROLE IF EXISTS np_e2e_${r}`);
   await admin.end();
 }

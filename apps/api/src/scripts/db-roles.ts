@@ -11,8 +11,9 @@
  *   np_org        → np_org_rw          (API org directory module: departments/authorities/SPVs)
  *   np_intake     → np_intake_rw       (API grievance intake module)
  *   np_case       → np_case_rw         (API case engine module + worker escalation/closure sweep)
+ *   np_accountability → np_accountability_rw  (API accountability module + worker rollup/alert/push jobs)
  *
- * Passwords come from NP_DB_PASSWORD_PLATFORM / _IAM / _AUDIT / _RELAY / _REGISTRY / _CITIZEN / _ORG / _INTAKE / _CASE.
+ * Passwords come from NP_DB_PASSWORD_PLATFORM / _IAM / _AUDIT / _RELAY / _REGISTRY / _CITIZEN / _ORG / _INTAKE / _CASE / _ACCOUNTABILITY.
  * Run with MIGRATION_DATABASE_URL (schema owner) after migrations.
  */
 import pg from 'pg';
@@ -26,7 +27,8 @@ const ROLES = [
   { login: 'np_citizen', group: 'np_citizen_rw', env: 'NP_DB_PASSWORD_CITIZEN' },
   { login: 'np_org', group: 'np_org_rw', env: 'NP_DB_PASSWORD_ORG' },
   { login: 'np_intake', group: 'np_intake_rw', env: 'NP_DB_PASSWORD_INTAKE' },
-  { login: 'np_case', group: 'np_case_rw', env: 'NP_DB_PASSWORD_CASE' }
+  { login: 'np_case', group: 'np_case_rw', env: 'NP_DB_PASSWORD_CASE' },
+  { login: 'np_accountability', group: 'np_accountability_rw', env: 'NP_DB_PASSWORD_ACCOUNTABILITY' }
 ] as const;
 
 async function main(): Promise<void> {

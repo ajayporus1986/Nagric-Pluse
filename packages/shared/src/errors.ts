@@ -140,6 +140,14 @@ export const ERRORS = {
   'NP-CASE-0004': { http: 403, level: 'info', en: 'Only the citizen who filed this grievance may confirm or dispute its closure.', hi: 'इस शिकायत को दर्ज करने वाला नागरिक ही इसके समापन की पुष्टि या विवाद कर सकता है।' },
   'NP-CASE-0005': { http: 410, level: 'info', en: 'The window to confirm or dispute this closure has already passed.', hi: 'इस समापन की पुष्टि या विवाद करने की समय-सीमा समाप्त हो चुकी है।' },
 
+  // ---- Official accountability & leadership reporting (ACC) -----------------
+  'NP-ACC-0001': { http: 404, level: 'info', en: 'Notice not found.', hi: 'नोटिस नहीं मिला।' },
+  'NP-ACC-0002': { http: 400, level: 'info', en: 'That person cannot be given a notice: no such active staff account.', hi: 'उस व्यक्ति को नोटिस नहीं दिया जा सकता: ऐसा कोई सक्रिय कर्मचारी खाता नहीं है।' },
+  'NP-ACC-0003': { http: 409, level: 'info', en: 'This notice is not in a state that allows that action.', hi: 'यह नोटिस इस कार्रवाई की अनुमति देने वाली स्थिति में नहीं है।' },
+  'NP-ACC-0004': { http: 403, level: 'info', en: 'Only the officer this notice concerns may reply to or appeal it.', hi: 'इस नोटिस से संबंधित अधिकारी ही इसका उत्तर या अपील दे सकता है।' },
+  'NP-ACC-0005': { http: 410, level: 'info', en: 'The window to reply to this notice has already passed.', hi: 'इस नोटिस का उत्तर देने की समय-सीमा समाप्त हो चुकी है।' },
+  'NP-ACC-0006': { http: 400, level: 'info', en: 'Unknown or inactive pull reason code.', hi: 'अज्ञात या निष्क्रिय पुल कारण कोड।' },
+
   // ---- Citizen identity (CIT) -----------------------------------------------
   'NP-CIT-0001': { http: 403, level: 'info', en: 'Citizen self-service is not switched on here yet.', hi: 'नागरिक स्व-सेवा अभी यहाँ सक्रिय नहीं है।' },
   'NP-CIT-0002': { http: 400, level: 'info', en: 'Enter a valid 10-digit mobile number.', hi: 'एक मान्य 10 अंकों का मोबाइल नंबर दर्ज करें।' },

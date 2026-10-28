@@ -10,7 +10,10 @@ import pg from 'pg';
 import { z } from 'zod';
 import { createLogger } from '../core/logger.js';
 import { keyIdOf } from '../audit/checkpoint.js';
-import { cleanupCitizen, cleanupIam, escalateOverdueCases, expireRecords, relayAudit, signCheckpointIfDue, sweepClosureConfirmations, type SigningKey } from './jobs.js';
+import {
+  cleanupCitizen, cleanupIam, escalateOverdueCases, expireRecords, fireSlaAlerts, pushMonthlyRollup, relayAudit,
+  rollupPersonMetrics, rollupProcessMetrics, signCheckpointIfDue, sweepClosureConfirmations, type SigningKey
+} from './jobs.js';
 
 const env = z
   .object({
@@ -22,13 +25,21 @@ const env = z
     DATABASE_URL_IAM: z.string().url().optional(),
     DATABASE_URL_CITIZEN: z.string().url().optional(),
     DATABASE_URL_CASE: z.string().url().optional(),
+    DATABASE_URL_ACCOUNTABILITY: z.string().url().optional(),
     AUDIT_SIGNING_KEY_FILE: z.string().optional(),
     RELAY_INTERVAL_MS: z.coerce.number().int().min(100).default(1000),
     CHECKPOINT_TICK_MS: z.coerce.number().int().min(1000).default(30_000),
     CHECKPOINT_MIN_ROWS: z.coerce.number().int().min(1).default(1000),
     CHECKPOINT_MAX_AGE_MS: z.coerce.number().int().min(10_000).default(300_000),
     CASE_SWEEP_INTERVAL_MS: z.coerce.number().int().min(10_000).max(3_600_000).default(300_000),
-    CASE_CLOSURE_CONFIRMATION_WINDOW_DAYS: z.coerce.number().int().min(1).max(60).default(7)
+    CASE_CLOSURE_CONFIRMATION_WINDOW_DAYS: z.coerce.number().int().min(1).max(60).default(7),
+    ACCOUNTABILITY_ROLLUP_WINDOW_DAYS: z.coerce.number().int().min(1).max(30).default(3),
+    ACCOUNTABILITY_PERSON_WINDOW_DAYS: z.coerce.number().int().min(7).max(180).default(30),
+    ACCOUNTABILITY_MIN_RESOLVED_CASES: z.coerce.number().int().min(1).max(1000).default(10),
+    ACCOUNTABILITY_MIN_DISTINCT_CITIZENS: z.coerce.number().int().min(1).max(1000).default(5),
+    ACCOUNTABILITY_ROLLUP_INTERVAL_MS: z.coerce.number().int().min(60_000).max(21_600_000).default(3_600_000),
+    ACCOUNTABILITY_ALERT_INTERVAL_MS: z.coerce.number().int().min(10_000).max(3_600_000).default(300_000),
+    ACCOUNTABILITY_PUSH_INTERVAL_MS: z.coerce.number().int().min(60_000).max(21_600_000).default(3_600_000)
   })
   .parse(process.env);
 
@@ -47,7 +58,8 @@ const pools = {
   platform: new pg.Pool({ connectionString: url(env.DATABASE_URL_PLATFORM, 'DATABASE_URL_PLATFORM'), max: 2, application_name: 'np-worker-platform' }),
   iam: new pg.Pool({ connectionString: url(env.DATABASE_URL_IAM, 'DATABASE_URL_IAM'), max: 2, application_name: 'np-worker-iam' }),
   citizen: new pg.Pool({ connectionString: url(env.DATABASE_URL_CITIZEN, 'DATABASE_URL_CITIZEN'), max: 2, application_name: 'np-worker-citizen' }),
-  case: new pg.Pool({ connectionString: url(env.DATABASE_URL_CASE, 'DATABASE_URL_CASE'), max: 2, application_name: 'np-worker-case' })
+  case: new pg.Pool({ connectionString: url(env.DATABASE_URL_CASE, 'DATABASE_URL_CASE'), max: 2, application_name: 'np-worker-case' }),
+  accountability: new pg.Pool({ connectionString: url(env.DATABASE_URL_ACCOUNTABILITY, 'DATABASE_URL_ACCOUNTABILITY'), max: 2, application_name: 'np-worker-accountability' })
 };
 for (const [name, p] of Object.entries(pools)) p.on('error', (err) => log.error({ err, pool: name, errCode: 'NP-DB-0001' }, 'idle client error'));
 
@@ -91,7 +103,12 @@ async function main(): Promise<void> {
     every('cleanupIam', 3_600_000, 'NP-WORK-0001', () => cleanupIam(pools.iam)),
     every('cleanupCitizen', 3_600_000, 'NP-WORK-0001', () => cleanupCitizen(pools.citizen)),
     every('escalateOverdueCases', env.CASE_SWEEP_INTERVAL_MS, 'NP-WORK-0001', () => escalateOverdueCases(pools.case)),
-    every('sweepClosureConfirmations', env.CASE_SWEEP_INTERVAL_MS, 'NP-WORK-0001', () => sweepClosureConfirmations(pools.case, env.CASE_CLOSURE_CONFIRMATION_WINDOW_DAYS))
+    every('sweepClosureConfirmations', env.CASE_SWEEP_INTERVAL_MS, 'NP-WORK-0001', () => sweepClosureConfirmations(pools.case, env.CASE_CLOSURE_CONFIRMATION_WINDOW_DAYS)),
+    every('rollupProcessMetrics', env.ACCOUNTABILITY_ROLLUP_INTERVAL_MS, 'NP-WORK-0001', () => rollupProcessMetrics(pools.accountability, env.ACCOUNTABILITY_ROLLUP_WINDOW_DAYS)),
+    every('rollupPersonMetrics', env.ACCOUNTABILITY_ROLLUP_INTERVAL_MS, 'NP-WORK-0001', () =>
+      rollupPersonMetrics(pools.accountability, env.ACCOUNTABILITY_PERSON_WINDOW_DAYS, env.ACCOUNTABILITY_MIN_RESOLVED_CASES, env.ACCOUNTABILITY_MIN_DISTINCT_CITIZENS)),
+    every('fireSlaAlerts', env.ACCOUNTABILITY_ALERT_INTERVAL_MS, 'NP-WORK-0001', () => fireSlaAlerts(pools.accountability)),
+    every('pushMonthlyRollup', env.ACCOUNTABILITY_PUSH_INTERVAL_MS, 'NP-WORK-0001', () => pushMonthlyRollup(pools.accountability))
   ];
   if (key) timers.push(every('signCheckpoint', env.CHECKPOINT_TICK_MS, 'NP-WORK-0003', () => signCheckpointIfDue(pools.relay, key, env.CHECKPOINT_MIN_ROWS, env.CHECKPOINT_MAX_AGE_MS, log)));
 

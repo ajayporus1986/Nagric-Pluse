@@ -14,6 +14,7 @@ import { OrgPage } from './pages/Org';
 import { ClassificationPage } from './pages/Classification';
 import { GrievancesPage } from './pages/Grievances';
 import { CaseInboxPage } from './pages/CaseInbox';
+import { AccountabilityPage } from './pages/Accountability';
 import { ChangesPage } from './pages/Changes';
 import { UsersPage } from './pages/Users';
 import { KillPage } from './pages/Kill';
@@ -30,6 +31,7 @@ const TABS: { id: string; label: TKey; needs?: [string, string] }[] = [
   { id: 'classification', label: 'nav_classification', needs: ['platform.scope', 'view'] },
   { id: 'intake', label: 'nav_intake', needs: ['intake.grievances', 'view'] },
   { id: 'case', label: 'nav_case', needs: ['case.inbox', 'view'] },
+  { id: 'accountability', label: 'nav_accountability', needs: ['accountability.dashboard', 'view'] },
   { id: 'changes', label: 'nav_changes', needs: ['platform.change_requests', 'view'] },
   { id: 'users', label: 'nav_users', needs: ['iam.users', 'view'] },
   { id: 'kill', label: 'nav_kill', needs: ['platform.kill_switch', 'view'] },
@@ -250,6 +252,7 @@ function Shell({ session }: { session: SessionInfo }) {
             {current === 'classification' && <ClassificationPage nodeId={nodeId} caps={c} />}
             {current === 'intake' && <GrievancesPage nodeId={nodeId} caps={c} />}
             {current === 'case' && <CaseInboxPage nodeId={nodeId} caps={c} myUserId={session.user.id} />}
+            {current === 'accountability' && <AccountabilityPage nodeId={nodeId} caps={c} myUserId={session.user.id} />}
             {current === 'changes' && <ChangesPage nodeId={nodeId} caps={c} myUserId={session.user.id} />}
             {current === 'users' && <UsersPage nodeId={nodeId} nodeLevel={tree.data?.node.level ?? ''} caps={c} myUserId={session.user.id} />}
             {current === 'kill' && <KillPage nodeId={nodeId} caps={c} />}
