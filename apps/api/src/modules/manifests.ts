@@ -159,6 +159,29 @@ const RAW: unknown[] = [
         defaultGrants: { ...ALL_STAFF_VIEW, ...REGISTRY_ADMIN }
       }
     ]
+  },
+  {
+    id: 'citizen',
+    version: '0.1.0',
+    name: { en: 'Citizen identity', hi: 'नागरिक पहचान' },
+    realm: 'GOVERNMENT',
+    // Switchable (not invariant): a district can enable citizen self-service
+    // only once it is ready, and can disable it anywhere in its subtree with
+    // the ordinary Lego module toggle (see platform.module_settings).
+    requires: ['platform'],
+    features: [
+      {
+        code: 'citizen.identity',
+        name: { en: 'Mobile OTP sign-in', hi: 'मोबाइल ओटीपी साइन-इन' },
+        // Citizens hold no role in the Lego model, so no defaultGrants apply
+        // to them; the citizen routes check availability directly via
+        // PolicyService.featureAvailable, not through a staff decision.
+        // 'view' is kept only so staff-facing module/feature lists (e.g. a
+        // future "what's switched on here" screen) can show this feature.
+        actions: ['view'],
+        defaultGrants: ALL_STAFF_VIEW
+      }
+    ]
   }
 ];
 

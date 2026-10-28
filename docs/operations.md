@@ -6,8 +6,8 @@
 | --- | --- | --- |
 | `db` | `postgres:16` | — |
 | `migrate` (one-shot) | `api` image, `migrate.js` then `db-roles.js` | db as schema owner |
-| `api` | `api` image, `dist/server.js` | db as `np_platform`, `np_iam`, `np_audit`, `np_registry` |
-| `worker` | `api` image, `dist/worker/main.js` | db as `np_relay`, `np_platform`, `np_iam` |
+| `api` | `api` image, `dist/server.js` | db as `np_platform`, `np_iam`, `np_audit`, `np_registry`, `np_citizen` |
+| `worker` | `api` image, `dist/worker/main.js` | db as `np_relay`, `np_platform`, `np_iam`, `np_citizen` |
 | `web` | nginx serving the console, proxying `/api` | api |
 
 The API is stateless: run as many replicas as needed behind the web tier. Sessions, rate limits and policy live in Postgres; replicas pick up policy changes within about 100 ms through `LISTEN/NOTIFY`.
@@ -45,6 +45,7 @@ Migrations create five NOLOGIN group roles with least-privilege grants. `db-role
 | `np_audit` | `np_audit_reader` | read the audit ledger, run `verify_chain()` |
 | `np_relay` | `np_audit_relay` | move outbox rows into the ledger, write signed checkpoints |
 | `np_registry` | `np_registry_rw` | offices, posts, post holders, notified services (not `sla_days`, which only the platform role changes, and only via an approved change request) |
+| `np_citizen` | `np_citizen_rw` | citizen identity, OTP challenges, citizen sessions and rate limits — never touches `iam.*`, `registry.*` or any staff table |
 
 No service role can UPDATE or DELETE the audit ledger; triggers refuse it even for the owner.
 
@@ -72,6 +73,15 @@ Audit verification failures log at `fatal` with `NP-AUDIT-0001` (chain broken) o
 
 - **Field encryption** (`FIELD_ENCRYPTION_KEYS`): add a new key id, switch `FIELD_ENCRYPTION_ACTIVE_KEY` to it, restart. Old values still decrypt; new values use the new key. Remove an old key only after re-encrypting its data.
 - **Audit signing key**: generate a new Ed25519 key, `audit-key register` it, point the worker at it, then `audit-key retire <old-id>`. Old checkpoints keep verifying with the retired public key.
+
+## Citizen OTP delivery
+
+`SMS_PROVIDER` picks how the citizen module delivers sign-in codes:
+
+- `console` only logs the code (labelled as a stub). Refused at startup in production.
+- `webhook` HTTPS-POSTs an HMAC-signed `{mobile, otp, purpose, requestId}` payload to `SMS_WEBHOOK_URL`, signed with `SMS_WEBHOOK_SECRET` (header `x-np-signature`, `HMAC-SHA256("<x-np-timestamp>.<body>")`). That endpoint is expected to be the operator's own bridge into whichever SMS gateway they hold an account with; this project does not wire in a gateway SDK directly, since no account or credential format has been confirmed for one.
+
+`OTP_TTL_SECONDS` and `OTP_MAX_ATTEMPTS` are ordinary config, not Lego settings, the same way session lifetimes are: they are operational/security parameters, not civic data that varies per district.
 
 ## Capacity (measured)
 

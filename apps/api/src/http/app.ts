@@ -30,6 +30,7 @@ import { MemoryRateLimiter } from '../iam/rate-limit.js';
 import { csrfValid, loadSession, nextStep, sessionCookieName, type AuthContext } from '../iam/sessions.js';
 import type { PolicyService } from '../policy/service.js';
 import type { KeyRing } from '../security/crypto.js';
+import type { OtpSender } from '../citizen/otp-sender.js';
 
 /** How a route may be reached. */
 export type Access =
@@ -67,6 +68,8 @@ export interface AppDeps {
   pools: Pools;
   policy: PolicyService;
   ring: KeyRing;
+  /** Chosen once at startup from SMS_PROVIDER; injectable so tests can capture OTPs instead of sending them. */
+  otpSender: OtpSender;
 }
 
 /** Fastify instance with the zod type provider, as passed to route modules. */

@@ -12,7 +12,7 @@
  */
 import pg from 'pg';
 import type { Logger } from 'pino';
-import { buildSnapshot, decide, type PolicyResult, type PolicySnapshot, type Principal, type SnapshotRows, type Toggle } from '@np/policy';
+import { buildSnapshot, decide, featureAvailability, type PolicyResult, type PolicySnapshot, type Principal, type SnapshotRows, type Toggle } from '@np/policy';
 import type { Action, ModuleManifest, Realm, ScopeLevel } from '@np/shared';
 import { AppError } from '../core/errors.js';
 import type { AuthContext } from '../iam/sessions.js';
@@ -189,6 +189,16 @@ export class PolicyService {
   /** Full decision for a session at a node. */
   decide(auth: AuthContext, featureCode: string, action: Action, nodeId: string): PolicyResult {
     return decide(this.principalOf(auth), featureCode, action, this.pathOf(nodeId), this.current().snapshot);
+  }
+
+  /**
+   * Whether a feature is switched on at a node, ignoring role grants
+   * entirely. Used by modules with no staff-role concept of their own (e.g.
+   * citizen self-service): availability there is still a Lego module/feature
+   * toggle, resolved the same way, but there is no principal to authorize.
+   */
+  featureAvailable(featureCode: string, nodeId: string): boolean {
+    return featureAvailability(this.current().snapshot, featureCode, this.pathOf(nodeId), new Date());
   }
 
   /** Node ids in the subtree of `rootId` (breadth-first, including the root), capped at `limit`. */

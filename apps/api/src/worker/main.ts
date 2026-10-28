@@ -10,7 +10,7 @@ import pg from 'pg';
 import { z } from 'zod';
 import { createLogger } from '../core/logger.js';
 import { keyIdOf } from '../audit/checkpoint.js';
-import { cleanupIam, expireRecords, relayAudit, signCheckpointIfDue, type SigningKey } from './jobs.js';
+import { cleanupCitizen, cleanupIam, expireRecords, relayAudit, signCheckpointIfDue, type SigningKey } from './jobs.js';
 
 const env = z
   .object({
@@ -20,6 +20,7 @@ const env = z
     DATABASE_URL_AUDIT_RELAY: z.string().url().optional(),
     DATABASE_URL_PLATFORM: z.string().url().optional(),
     DATABASE_URL_IAM: z.string().url().optional(),
+    DATABASE_URL_CITIZEN: z.string().url().optional(),
     AUDIT_SIGNING_KEY_FILE: z.string().optional(),
     RELAY_INTERVAL_MS: z.coerce.number().int().min(100).default(1000),
     CHECKPOINT_TICK_MS: z.coerce.number().int().min(1000).default(30_000),
@@ -41,7 +42,8 @@ function url(specific: string | undefined, name: string): string {
 const pools = {
   relay: new pg.Pool({ connectionString: url(env.DATABASE_URL_AUDIT_RELAY, 'DATABASE_URL_AUDIT_RELAY'), max: 2, application_name: 'np-worker-relay' }),
   platform: new pg.Pool({ connectionString: url(env.DATABASE_URL_PLATFORM, 'DATABASE_URL_PLATFORM'), max: 2, application_name: 'np-worker-platform' }),
-  iam: new pg.Pool({ connectionString: url(env.DATABASE_URL_IAM, 'DATABASE_URL_IAM'), max: 2, application_name: 'np-worker-iam' })
+  iam: new pg.Pool({ connectionString: url(env.DATABASE_URL_IAM, 'DATABASE_URL_IAM'), max: 2, application_name: 'np-worker-iam' }),
+  citizen: new pg.Pool({ connectionString: url(env.DATABASE_URL_CITIZEN, 'DATABASE_URL_CITIZEN'), max: 2, application_name: 'np-worker-citizen' })
 };
 for (const [name, p] of Object.entries(pools)) p.on('error', (err) => log.error({ err, pool: name, errCode: 'NP-DB-0001' }, 'idle client error'));
 
@@ -82,7 +84,8 @@ async function main(): Promise<void> {
   const timers = [
     every('relayAudit', env.RELAY_INTERVAL_MS, 'NP-WORK-0002', () => relayAudit(pools.relay)),
     every('expireRecords', 60_000, 'NP-WORK-0001', () => expireRecords(pools.platform)),
-    every('cleanupIam', 3_600_000, 'NP-WORK-0001', () => cleanupIam(pools.iam))
+    every('cleanupIam', 3_600_000, 'NP-WORK-0001', () => cleanupIam(pools.iam)),
+    every('cleanupCitizen', 3_600_000, 'NP-WORK-0001', () => cleanupCitizen(pools.citizen))
   ];
   if (key) timers.push(every('signCheckpoint', env.CHECKPOINT_TICK_MS, 'NP-WORK-0003', () => signCheckpointIfDue(pools.relay, key, env.CHECKPOINT_MIN_ROWS, env.CHECKPOINT_MAX_AGE_MS, log)));
 

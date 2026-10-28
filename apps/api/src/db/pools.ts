@@ -17,6 +17,7 @@ export interface Pools {
   iam: pg.Pool;
   audit: pg.Pool;
   registry: pg.Pool;
+  citizen: pg.Pool;
 }
 
 /** Creates one pool with safe defaults and error logging. */
@@ -44,13 +45,14 @@ export function createPools(cfg: Config, log: Logger): Pools {
     platform: makePool('platform', cfg.db.platform, cfg, log),
     iam: makePool('iam', cfg.db.iam, cfg, log),
     audit: makePool('audit', cfg.db.audit, cfg, log),
-    registry: makePool('registry', cfg.db.registry, cfg, log)
+    registry: makePool('registry', cfg.db.registry, cfg, log),
+    citizen: makePool('citizen', cfg.db.citizen, cfg, log)
   };
 }
 
 /** Closes all pools; used on graceful shutdown. */
 export async function closePools(p: Pools): Promise<void> {
-  await Promise.allSettled([p.platform.end(), p.iam.end(), p.audit.end(), p.registry.end()]);
+  await Promise.allSettled([p.platform.end(), p.iam.end(), p.audit.end(), p.registry.end(), p.citizen.end()]);
 }
 
 /**

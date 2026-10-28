@@ -22,8 +22,17 @@ import { PolicyService } from './policy/service.js';
 import { registerRoutes } from './routes.js';
 import { buildKeyRing, encryptField, hashPassword, type KeyRing } from './security/crypto.js';
 import { generateTotpSecret, totpAt } from './security/totp.js';
-import { expireRecords, relayAudit, signCheckpointIfDue } from './worker/jobs.js';
+import { cleanupCitizen, expireRecords, relayAudit, signCheckpointIfDue } from './worker/jobs.js';
 import { keyIdOf } from './audit/checkpoint.js';
+import type { OtpSender } from './citizen/otp-sender.js';
+
+/** Test-only OTP sender: records the last code per mobile instead of sending an SMS. */
+class CapturingOtpSender implements OtpSender {
+  readonly sent = new Map<string, string>();
+  async send(mobile: string, otp: string): Promise<void> {
+    this.sent.set(mobile, otp);
+  }
+}
 
 const ADMIN_URL = process.env.DATABASE_URL;
 const MIGRATIONS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../db/migrations');
@@ -49,6 +58,7 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
   let policy: PolicyService;
   let app: App;
   let ring: KeyRing;
+  let otpSender: CapturingOtpSender;
   const secrets = new Map<string, string>();
   const ids = new Map<string, string>();
 
@@ -66,11 +76,20 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     ids.set(username, id);
   }
 
-  /** Extracts the session cookie pair from a response. */
+  /** Extracts the staff session cookie pair from a response. */
   function cookieOf(res: { headers: Record<string, unknown> }): string {
+    return cookieNamed(res, 'np_session');
+  }
+
+  /** Extracts the citizen session cookie from a response. */
+  function citizenCookieOf(res: { headers: Record<string, unknown> }): string {
+    return cookieNamed(res, 'np_citizen');
+  }
+
+  function cookieNamed(res: { headers: Record<string, unknown> }, name: string): string {
     const raw = res.headers['set-cookie'];
     const list = Array.isArray(raw) ? raw : [raw];
-    const c = list.find((x) => typeof x === 'string' && x.startsWith('np_session=')) as string;
+    const c = list.find((x) => typeof x === 'string' && x.startsWith(`${name}=`)) as string;
     return c.split(';')[0]!;
   }
 
@@ -112,7 +131,10 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
 
     // Real login roles per module, each inheriting only its group role.
     const loginPw = randomBytes(12).toString('hex');
-    for (const [suffix, group] of [['platform', 'np_platform_rw'], ['iam', 'np_iam_rw'], ['audit', 'np_audit_reader'], ['relay', 'np_audit_relay'], ['registry', 'np_registry_rw']]) {
+    for (const [suffix, group] of [
+      ['platform', 'np_platform_rw'], ['iam', 'np_iam_rw'], ['audit', 'np_audit_reader'], ['relay', 'np_audit_relay'],
+      ['registry', 'np_registry_rw'], ['citizen', 'np_citizen_rw']
+    ]) {
       await admin.query(`CREATE ROLE np_t_${suffix}_${tag} LOGIN PASSWORD '${loginPw}' IN ROLE ${group}`);
     }
     roleUrl = (suffix: string) => {
@@ -138,6 +160,7 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     const cfg = loadConfig({
       NODE_ENV: 'test', LOG_LEVEL: (process.env.TEST_LOG_LEVEL as string) ?? 'fatal', PUBLIC_ORIGIN: 'http://localhost:5173', COOKIE_SECURE: 'false',
       DATABASE_URL_PLATFORM: roleUrl('platform'), DATABASE_URL_IAM: roleUrl('iam'), DATABASE_URL_AUDIT: roleUrl('audit'), DATABASE_URL_REGISTRY: roleUrl('registry'),
+      DATABASE_URL_CITIZEN: roleUrl('citizen'),
       FIELD_ENCRYPTION_KEYS: `v1:${ring.keys.get('v1')!.toString('base64')}`, FIELD_ENCRYPTION_ACTIVE_KEY: 'v1'
     });
     const log = createLogger('api-test', cfg.LOG_LEVEL);
@@ -148,7 +171,8 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     await registerManifests(pools.platform, DEMO, log);
     policy = new PolicyService(pools.platform, cfg.db.platform, log);
     await policy.start();
-    app = await buildApp({ cfg, log, pools, policy, ring }, registerRoutes);
+    otpSender = new CapturingOtpSender();
+    app = await buildApp({ cfg, log, pools, policy, ring, otpSender }, registerRoutes);
   }, 60_000);
 
   afterAll(async () => {
@@ -157,7 +181,7 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     if (pools) await closePools(pools);
     await relayPool?.end();
     await admin.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
-    for (const s of ['platform', 'iam', 'audit', 'relay', 'registry']) await admin.query(`DROP ROLE IF EXISTS np_t_${s}_${tag}`);
+    for (const s of ['platform', 'iam', 'audit', 'relay', 'registry', 'citizen']) await admin.query(`DROP ROLE IF EXISTS np_t_${s}_${tag}`);
     await admin.end();
   });
 
@@ -170,7 +194,7 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
   it('refuses to register a route without an access declaration', async () => {
     const log = createLogger('x', 'fatal');
     await expect(
-      buildApp({ cfg: loadConfig({ NODE_ENV: 'test', DATABASE_URL: ownerUrl, PUBLIC_ORIGIN: 'http://x.test', FIELD_ENCRYPTION_KEYS: `v1:${randomBytes(32).toString('base64')}`, FIELD_ENCRYPTION_ACTIVE_KEY: 'v1' }), log, pools, policy, ring }, (a) => {
+      buildApp({ cfg: loadConfig({ NODE_ENV: 'test', DATABASE_URL: ownerUrl, PUBLIC_ORIGIN: 'http://x.test', FIELD_ENCRYPTION_KEYS: `v1:${randomBytes(32).toString('base64')}`, FIELD_ENCRYPTION_ACTIVE_KEY: 'v1' }), log, pools, policy, ring, otpSender }, (a) => {
         a.get('/oops', async () => 'x');
       })
     ).rejects.toMatchObject({ code: 'NP-CFG-0004' });
@@ -417,6 +441,79 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
 
     const after = await call(dm, 'GET', '/api/v1/registry/services?nodeId=D144');
     expect(after.json().services.find((s: { id: string }) => s.id === serviceId)).toMatchObject({ slaDays: 10 });
+  });
+
+  it('signs a citizen in by mobile + OTP, kept entirely separate from staff sessions', async () => {
+    const mobile = '9876543210';
+    const req1 = await app.inject({ method: 'POST', url: '/api/v1/citizen/otp/request', payload: { mobileNumber: mobile, nodeId: 'D144' } });
+    expect(req1.statusCode, req1.body).toBe(200);
+    const otp = otpSender.sent.get('+919876543210');
+    expect(otp).toMatch(/^\d{6}$/);
+
+    // A wrong code is rejected and counted; it does not consume the challenge.
+    const wrong = await app.inject({ method: 'POST', url: '/api/v1/citizen/otp/verify', payload: { mobileNumber: mobile, nodeId: 'D144', otp: '000000' } });
+    expect(wrong.json().error.code).toBe('NP-CIT-0003');
+
+    const verify = await app.inject({ method: 'POST', url: '/api/v1/citizen/otp/verify', payload: { mobileNumber: mobile, nodeId: 'D144', otp } });
+    expect(verify.statusCode, verify.body).toBe(200);
+    const cCookie = citizenCookieOf(verify);
+    const cCsrf = verify.json().csrfToken as string;
+
+    // The citizen cookie is a different name from the staff one and carries no staff session.
+    expect(cCookie.startsWith('np_citizen=')).toBe(true);
+    const session = await app.inject({ method: 'GET', url: '/api/v1/citizen/session', headers: { cookie: cCookie } });
+    expect(session.json().citizen.locale).toBe('hi');
+
+    // Logging in again with the same mobile number returns the same citizen (no duplicate row).
+    const req2 = await app.inject({ method: 'POST', url: '/api/v1/citizen/otp/request', payload: { mobileNumber: mobile, nodeId: 'D144' } });
+    expect(req2.statusCode).toBe(200);
+    const otp2 = otpSender.sent.get('+919876543210')!;
+    const verify2 = await app.inject({ method: 'POST', url: '/api/v1/citizen/otp/verify', payload: { mobileNumber: mobile, nodeId: 'D144', otp: otp2 } });
+    expect(verify2.json().citizen).toEqual(verify.json().citizen);
+
+    // CSRF is required on mutating citizen routes, just as for staff sessions.
+    const noCsrf = await app.inject({ method: 'POST', url: '/api/v1/citizen/logout', headers: { cookie: cCookie } });
+    expect(noCsrf.json().error.code).toBe('NP-CSRF-0001');
+    const out = await app.inject({ method: 'POST', url: '/api/v1/citizen/logout', headers: { cookie: cCookie, 'x-csrf-token': cCsrf } });
+    expect(out.statusCode, out.body).toBe(200);
+    expect((await app.inject({ method: 'GET', url: '/api/v1/citizen/session', headers: { cookie: cCookie } })).json().error.code).toBe('NP-CIT-0007');
+
+    // The citizen module/feature was never switched off here, so staff never had to act — but it IS
+    // an ordinary Lego toggle: confirm a district can turn it off for part of its subtree.
+    const o = new pg.Client({ connectionString: ownerUrl });
+    await o.connect();
+    await o.query(
+      `INSERT INTO platform.feature_settings (node_id, feature_code, state, change_request_id) VALUES ('SUB_B', 'citizen.identity', 'DISABLED', gen_random_uuid())`
+    );
+    await o.end();
+    await policy.reload('test');
+    const blocked = await app.inject({ method: 'POST', url: '/api/v1/citizen/otp/request', payload: { mobileNumber: '9123456780', nodeId: 'SUB_B' } });
+    expect(blocked.json().error.code).toBe('NP-CIT-0001');
+    // A sibling node is unaffected.
+    expect((await app.inject({ method: 'POST', url: '/api/v1/citizen/otp/request', payload: { mobileNumber: '9123456781', nodeId: 'SUB_A' } })).statusCode).toBe(200);
+
+    // Too many wrong attempts on one challenge locks that challenge out (NP-CIT-0004), not just NP-CIT-0003.
+    const mobile3 = '9988776655';
+    await app.inject({ method: 'POST', url: '/api/v1/citizen/otp/request', payload: { mobileNumber: mobile3, nodeId: 'D144' } });
+    let lastCode = '';
+    // OTP_MAX_ATTEMPTS defaults to 5: the 6th wrong attempt is the one that trips NP-CIT-0004.
+    for (let i = 0; i < 6; i++) {
+      lastCode = (await app.inject({ method: 'POST', url: '/api/v1/citizen/otp/verify', payload: { mobileNumber: mobile3, nodeId: 'D144', otp: '111111' } })).json().error.code;
+    }
+    expect(lastCode).toBe('NP-CIT-0004');
+
+    // The citizen module writes its own audit trail to its own outbox, the same transactional pattern as
+    // every other module (relaying it into the shared ledger is exercised by the dedicated audit test
+    // below; draining it here would starve that test of the >10 rows it expects).
+    const owner2 = new pg.Client({ connectionString: ownerUrl });
+    await owner2.connect();
+    const citizenEvents = await owner2.query<{ action: string }>(`SELECT action FROM citizen.audit_outbox ORDER BY id`);
+    await owner2.end();
+    expect(citizenEvents.rows.map((r) => r.action)).toEqual(expect.arrayContaining(['citizen.otp.requested', 'citizen.registered', 'citizen.login.success', 'citizen.logout']));
+
+    // The cleanup job removes what is now a spent/expired OTP challenge without touching active citizen rows.
+    const cleaned = await cleanupCitizen(pools.citizen);
+    expect(cleaned.otpChallenges).toBeGreaterThan(0);
   });
 
   it('relays audit events, signs a checkpoint, and verifies the ledger', async () => {
