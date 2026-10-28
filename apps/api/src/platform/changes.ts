@@ -38,7 +38,11 @@ export const PAYLOADS = {
   QUORUM_CONFIG: z.object({ level: z.enum(SCOPE_LEVELS), required: z.number().int().min(2).max(9) }).strict(),
   USER_ENABLE: z.object({ userId: z.string().uuid() }).strict(),
   USER_RESET_CREDENTIALS: z.object({ userId: z.string().uuid() }).strict(),
-  USER_DISABLE: z.object({ userId: z.string().uuid() }).strict()
+  USER_DISABLE: z.object({ userId: z.string().uuid() }).strict(),
+  // Changes the statutory time limit of one notified service. This is the
+  // only way sla_days may change: never a direct edit, so a citizen's
+  // guaranteed timeline cannot be altered without a Realm Governor quorum.
+  SERVICE_SLA_SET: z.object({ serviceId: z.string().uuid(), slaDays: z.number().int().min(1).max(365) }).strict()
 } as const;
 
 export type ChangeKind = keyof typeof PAYLOADS;
@@ -197,6 +201,17 @@ export async function validateChange(db: pg.PoolClient, state: PolicyState, kind
       }
       subjectUserId = p.userId;
       targetKey = `USER:${p.userId}`;
+      break;
+    }
+    case 'SERVICE_SLA_SET': {
+      const p = payload as z.infer<typeof PAYLOADS.SERVICE_SLA_SET>;
+      const s = await db.query<{ node_id: string; sla_days: number }>('SELECT node_id, sla_days FROM registry.services WHERE id = $1 AND active', [p.serviceId]);
+      const row = s.rows[0];
+      if (!row) throw new AppError('NP-REG-0003', { serviceId: p.serviceId });
+      // The request must be raised at the service's own node (no acting on another area's timeline).
+      if (row.node_id !== nodeId) throw new AppError('NP-VAL-0001', {}, { fields: [{ path: 'nodeId', message: `service belongs to ${row.node_id}` }] });
+      if (row.sla_days === p.slaDays) throw new AppError('NP-CR-0005', { current: row.sla_days });
+      targetKey = `SERVICE_SLA_SET:${p.serviceId}`;
       break;
     }
   }
@@ -387,6 +402,14 @@ export async function applyChange(
       await c.query(`UPDATE iam.sessions SET revoked_at = now(), revoke_reason = 'credentials_reset' WHERE user_id = $1 AND revoked_at IS NULL`, [p.userId]);
       await writeAudit(c, 'iam', { action: 'iam.user.credentials_reset', actorId: finalApproverId, ip, targetType: 'user', targetId: p.userId!, detail: { changeRequestId: cr.id } });
       return { oneTimePassword };
+    }
+    case 'SERVICE_SLA_SET': {
+      const slaDays = (cr.payload as { slaDays: number }).slaDays;
+      const r = await c.query('UPDATE registry.services SET sla_days = $2, change_request_id = $3, updated_at = now() WHERE id = $1 AND active', [
+        (cr.payload as { serviceId: string }).serviceId, slaDays, cr.id
+      ]);
+      if (r.rowCount !== 1) throw new AppError('NP-CR-0008', { reason: 'service no longer active' });
+      return {};
     }
   }
 }

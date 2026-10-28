@@ -23,6 +23,7 @@ x-db-urls: &db-urls
   DATABASE_URL_IAM: postgres://np_iam:${NP_DB_PASSWORD_IAM:?}@db:5432/nagrik_pulse
   DATABASE_URL_AUDIT: postgres://np_audit:${NP_DB_PASSWORD_AUDIT:?}@db:5432/nagrik_pulse
   DATABASE_URL_AUDIT_RELAY: postgres://np_relay:${NP_DB_PASSWORD_RELAY:?}@db:5432/nagrik_pulse
+  DATABASE_URL_REGISTRY: postgres://np_registry:${NP_DB_PASSWORD_REGISTRY:?}@db:5432/nagrik_pulse
 
 services:
   db:
@@ -55,6 +56,7 @@ services:
       NP_DB_PASSWORD_IAM: ${NP_DB_PASSWORD_IAM:?}
       NP_DB_PASSWORD_AUDIT: ${NP_DB_PASSWORD_AUDIT:?}
       NP_DB_PASSWORD_RELAY: ${NP_DB_PASSWORD_RELAY:?}
+      NP_DB_PASSWORD_REGISTRY: ${NP_DB_PASSWORD_REGISTRY:?}
     depends_on: { db: { condition: service_healthy } }
     networks: [internal]
     read_only: true

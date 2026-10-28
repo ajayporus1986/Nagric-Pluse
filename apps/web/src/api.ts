@@ -41,7 +41,7 @@ export function setSessionLostHandler(fn: () => void): void {
 const SESSION_CODES: ErrorCode[] = ['NP-AUTH-0001', 'NP-SESS-0001', 'NP-SESS-0002', 'NP-AUTH-0004'];
 
 /** Performs a JSON request; throws ApiError on any failure. */
-export async function api<T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown, locale: Locale = 'hi'): Promise<T> {
+export async function api<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown, locale: Locale = 'hi'): Promise<T> {
   const headers: Record<string, string> = { accept: 'application/json', 'accept-language': locale };
   if (body !== undefined) headers['content-type'] = 'application/json';
   if (method !== 'GET' && csrfToken) headers['x-csrf-token'] = csrfToken;
@@ -77,3 +77,5 @@ export async function api<T>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: st
 /** Shorthand helpers. */
 export const get = <T>(path: string, locale?: Locale) => api<T>('GET', path, undefined, locale);
 export const post = <T>(path: string, body?: unknown, locale?: Locale) => api<T>('POST', path, body ?? {}, locale);
+export const patch = <T>(path: string, body?: unknown, locale?: Locale) => api<T>('PATCH', path, body ?? {}, locale);
+export const del = <T>(path: string, locale?: Locale) => api<T>('DELETE', path, undefined, locale);

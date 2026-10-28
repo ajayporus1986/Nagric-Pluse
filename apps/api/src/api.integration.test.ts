@@ -112,7 +112,7 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
 
     // Real login roles per module, each inheriting only its group role.
     const loginPw = randomBytes(12).toString('hex');
-    for (const [suffix, group] of [['platform', 'np_platform_rw'], ['iam', 'np_iam_rw'], ['audit', 'np_audit_reader'], ['relay', 'np_audit_relay']]) {
+    for (const [suffix, group] of [['platform', 'np_platform_rw'], ['iam', 'np_iam_rw'], ['audit', 'np_audit_reader'], ['relay', 'np_audit_relay'], ['registry', 'np_registry_rw']]) {
       await admin.query(`CREATE ROLE np_t_${suffix}_${tag} LOGIN PASSWORD '${loginPw}' IN ROLE ${group}`);
     }
     roleUrl = (suffix: string) => {
@@ -131,11 +131,13 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     await seedUser(owner, 'sre1', [['PLATFORM_OPERATOR', 'D144']]);
     await seedUser(owner, 'obs1', [['OBSERVER', 'D144']]);
     await seedUser(owner, 'clerk1', [['OFFICER', 'SUB_A']]);
+    await seedUser(owner, 'dm1', [['DISTRICT_MAGISTRATE', 'D144']]);
+    await seedUser(owner, 'clerk2', [['OFFICER', 'SUB_A']]);
     await owner.end();
 
     const cfg = loadConfig({
       NODE_ENV: 'test', LOG_LEVEL: (process.env.TEST_LOG_LEVEL as string) ?? 'fatal', PUBLIC_ORIGIN: 'http://localhost:5173', COOKIE_SECURE: 'false',
-      DATABASE_URL_PLATFORM: roleUrl('platform'), DATABASE_URL_IAM: roleUrl('iam'), DATABASE_URL_AUDIT: roleUrl('audit'),
+      DATABASE_URL_PLATFORM: roleUrl('platform'), DATABASE_URL_IAM: roleUrl('iam'), DATABASE_URL_AUDIT: roleUrl('audit'), DATABASE_URL_REGISTRY: roleUrl('registry'),
       FIELD_ENCRYPTION_KEYS: `v1:${ring.keys.get('v1')!.toString('base64')}`, FIELD_ENCRYPTION_ACTIVE_KEY: 'v1'
     });
     const log = createLogger('api-test', cfg.LOG_LEVEL);
@@ -155,7 +157,7 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     if (pools) await closePools(pools);
     await relayPool?.end();
     await admin.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
-    for (const s of ['platform', 'iam', 'audit', 'relay']) await admin.query(`DROP ROLE IF EXISTS np_t_${s}_${tag}`);
+    for (const s of ['platform', 'iam', 'audit', 'relay', 'registry']) await admin.query(`DROP ROLE IF EXISTS np_t_${s}_${tag}`);
     await admin.end();
   });
 
@@ -334,6 +336,87 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     expect(p.statusCode, p.body).toBe(201);
     expect((await call(g2, 'POST', `/api/v1/change-requests/${p.json().id}/votes`, { verdict: 'APPROVE' })).json().status).toBe('APPLIED');
     expect((await call(o, 'GET', '/api/v1/auth/session')).statusCode).toBe(401);
+  });
+
+  it('manages offices, posts and post holders with least-privilege roles and jurisdiction checks', async () => {
+    const dm = await signIn('dm1');
+    const clerk = await signIn('clerk2');
+
+    // A clerk (view-only on registry.offices) cannot create an office.
+    const denied = await call(clerk, 'POST', '/api/v1/registry/offices', {
+      nodeId: 'SUB_A', nameEn: 'Tehsil Office', nameHi: 'तहसील कार्यालय', departmentEn: 'Revenue', departmentHi: 'राजस्व'
+    });
+    expect(denied.json().error.code).toBe('NP-POL-0001');
+
+    // The District Magistrate (DISTRICT_MAGISTRATE @ D144) covers SUB_A, a child node.
+    const office = await call(dm, 'POST', '/api/v1/registry/offices', {
+      nodeId: 'SUB_A', nameEn: 'Tehsil Office', nameHi: 'तहसील कार्यालय', departmentEn: 'Revenue', departmentHi: 'राजस्व', phone: '0120-1234567'
+    });
+    expect(office.statusCode, office.body).toBe(201);
+    const officeId = office.json().id as string;
+
+    const list = await call(dm, 'GET', '/api/v1/registry/offices?nodeId=D144');
+    expect(list.json().offices.map((o: { id: string }) => o.id)).toContain(officeId);
+
+    const post = await call(dm, 'POST', '/api/v1/registry/posts', { officeId, titleEn: 'Tehsildar', titleHi: 'तहसीलदार' });
+    expect(post.statusCode, post.body).toBe(201);
+    const postId = post.json().id as string;
+
+    // An office with an active post cannot be retired.
+    expect((await call(dm, 'DELETE', `/api/v1/registry/offices/${officeId}`)).json().error.code).toBe('NP-REG-0004');
+
+    // Assign clerk1 as the current holder; a second assignment while one is open is rejected.
+    const assign = await call(dm, 'POST', `/api/v1/registry/posts/${postId}/holder`, { userId: ids.get('clerk1') });
+    expect(assign.statusCode, assign.body).toBe(201);
+    expect((await call(dm, 'POST', `/api/v1/registry/posts/${postId}/holder`, { userId: ids.get('dm1') })).json().error.code).toBe('NP-REG-0006');
+
+    const posts = await call(dm, 'GET', `/api/v1/registry/posts?officeId=${officeId}`);
+    expect(posts.json().posts[0]).toMatchObject({ id: postId, holder: { userId: ids.get('clerk1') } });
+
+    // Ending the assignment frees the post for a new holder.
+    expect((await call(dm, 'POST', `/api/v1/registry/posts/${postId}/holder/end`)).statusCode).toBe(200);
+    expect((await call(dm, 'POST', `/api/v1/registry/posts/${postId}/holder`, { userId: ids.get('dm1') })).statusCode).toBe(201);
+
+    // Retiring the post, then the office, now succeeds.
+    expect((await call(dm, 'DELETE', `/api/v1/registry/posts/${postId}`)).statusCode).toBe(200);
+    expect((await call(dm, 'DELETE', `/api/v1/registry/offices/${officeId}`)).statusCode).toBe(200);
+  });
+
+  it('creates a notified service and changes its SLA only through a Realm Governor quorum', async () => {
+    const dm = await signIn('dm1');
+    const g1 = await signIn('gov1');
+    const g2 = await signIn('gov2');
+
+    const svc = await call(dm, 'POST', '/api/v1/registry/services', {
+      nodeId: 'D144', code: 'caste_certificate', nameEn: 'Caste certificate', nameHi: 'जाति प्रमाण पत्र',
+      departmentEn: 'Revenue', departmentHi: 'राजस्व', slaDays: 15
+    });
+    expect(svc.statusCode, svc.body).toBe(201);
+    const serviceId = svc.json().id as string;
+
+    // Same code at the same node is refused.
+    expect(
+      (
+        await call(dm, 'POST', '/api/v1/registry/services', {
+          nodeId: 'D144', code: 'caste_certificate', nameEn: 'x', nameHi: 'x', departmentEn: 'x', departmentHi: 'x', slaDays: 10
+        })
+      ).json().error.code
+    ).toBe('NP-REG-0005');
+
+    // sla_days is not even a recognised field on the direct-edit endpoint.
+    const directEdit = await call(dm, 'PATCH', `/api/v1/registry/services/${serviceId}`, { slaDays: 5 });
+    expect(directEdit.json().error.code).toBe('NP-VAL-0001');
+
+    // The SLA changes only once a second Realm Governor approves.
+    const propose = await call(g1, 'POST', '/api/v1/change-requests', {
+      nodeId: 'D144', kind: 'SERVICE_SLA_SET', payload: { serviceId, slaDays: 10 }, reason: 'aligning with the state notification'
+    });
+    expect(propose.statusCode, propose.body).toBe(201);
+    const approve = await call(g2, 'POST', `/api/v1/change-requests/${propose.json().id}/votes`, { verdict: 'APPROVE' });
+    expect(approve.json().status).toBe('APPLIED');
+
+    const after = await call(dm, 'GET', '/api/v1/registry/services?nodeId=D144');
+    expect(after.json().services.find((s: { id: string }) => s.id === serviceId)).toMatchObject({ slaDays: 10 });
   });
 
   it('relays audit events, signs a checkpoint, and verifies the ledger', async () => {

@@ -10,7 +10,7 @@ import type { Decision } from '@np/shared';
 import { AppError } from '../core/errors.js';
 
 /** Schemas that own an audit_outbox table. */
-export type OutboxSchema = 'platform' | 'iam';
+export type OutboxSchema = 'platform' | 'iam' | 'registry';
 
 /** One audit event. Never put secrets or raw personal data in `detail`. */
 export interface AuditEvent {
@@ -32,7 +32,7 @@ export interface AuditEvent {
 export async function writeAudit(client: pg.PoolClient, schema: OutboxSchema, ev: AuditEvent): Promise<void> {
   // The schema name comes from a closed union, never from user input, so the
   // identifier interpolation below cannot be injected.
-  const table = schema === 'platform' ? 'platform.audit_outbox' : 'iam.audit_outbox';
+  const table = schema === 'platform' ? 'platform.audit_outbox' : schema === 'iam' ? 'iam.audit_outbox' : 'registry.audit_outbox';
   try {
     await client.query(
       `INSERT INTO ${table} (actor_id, actor_roles, action, feature_code, scope_path, target_type, target_id, decision, ip, detail)

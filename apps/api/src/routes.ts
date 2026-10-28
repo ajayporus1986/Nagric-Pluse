@@ -8,6 +8,7 @@ import { registerAuthRoutes } from './iam/routes-auth.js';
 import { registerUserRoutes } from './iam/routes-users.js';
 import { registerPlatformRoutes } from './platform/routes.js';
 import { registerAuditRoutes } from './audit/routes.js';
+import { registerRegistryRoutes } from './registry/routes.js';
 
 export function registerRoutes(app: App, deps: AppDeps): void {
   registerSystemRoutes(app, deps);
@@ -15,4 +16,5 @@ export function registerRoutes(app: App, deps: AppDeps): void {
   registerUserRoutes(app, deps);
   registerPlatformRoutes(app, deps);
   registerAuditRoutes(app, deps);
+  registerRegistryRoutes(app, deps);
 }

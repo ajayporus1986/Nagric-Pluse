@@ -20,6 +20,17 @@ const ALL_STAFF_VIEW = Object.fromEntries(
   ].map((r) => [r, ['view']])
 );
 
+/** Roles that administer the registry at their own level (office heads and up). */
+const REGISTRY_ADMIN = {
+  OFFICE_HEAD: ['view', 'create', 'update'],
+  DEPARTMENT_HEAD: ['view', 'create', 'update', 'delete'],
+  DISTRICT_MAGISTRATE: ['view', 'create', 'update', 'delete'],
+  AUTHORITY_CEO: ['view', 'create', 'update', 'delete'],
+  REALM_GOVERNOR: ['view'],
+  OBSERVER: ['view'],
+  DATA_PROTECTION_OFFICER: ['view']
+};
+
 /** Raw manifest definitions (validated below). */
 const RAW: unknown[] = [
   {
@@ -113,6 +124,39 @@ const RAW: unknown[] = [
           REALM_GOVERNOR: ['view', 'special'],
           PLATFORM_OPERATOR: ['view', 'special']
         }
+      }
+    ]
+  },
+  {
+    id: 'registry',
+    version: '0.1.0',
+    name: { en: 'Office & service registry', hi: 'कार्यालय एवं सेवा रजिस्ट्री' },
+    realm: 'GOVERNMENT',
+    requires: ['platform', 'iam'],
+    features: [
+      {
+        code: 'registry.offices',
+        name: { en: 'Offices', hi: 'कार्यालय' },
+        actions: ['view', 'create', 'update', 'delete'],
+        auditedActions: ['create', 'update', 'delete'],
+        defaultGrants: { ...ALL_STAFF_VIEW, ...REGISTRY_ADMIN }
+      },
+      {
+        code: 'registry.posts',
+        name: { en: 'Posts & post holders', hi: 'पद एवं पदधारी' },
+        actions: ['view', 'create', 'update', 'delete'],
+        auditedActions: ['create', 'update', 'delete'],
+        defaultGrants: { ...ALL_STAFF_VIEW, ...REGISTRY_ADMIN }
+      },
+      {
+        code: 'registry.services',
+        name: { en: 'Notified services & timelines', hi: 'सूचित सेवाएँ एवं समय-सीमा' },
+        // Everything except the SLA itself is a direct, audited edit; the SLA
+        // changes only through a change request (platform.change_requests),
+        // so 'update' here never touches sla_days — see registry routes.
+        actions: ['view', 'create', 'update', 'delete'],
+        auditedActions: ['create', 'update', 'delete'],
+        defaultGrants: { ...ALL_STAFF_VIEW, ...REGISTRY_ADMIN }
       }
     ]
   }

@@ -98,6 +98,47 @@ export interface KillSwitch {
   active: boolean;
 }
 
+export interface Office {
+  id: string;
+  nodeId: string;
+  nameEn: string;
+  nameHi: string;
+  departmentEn: string;
+  departmentHi: string;
+  addressEn: string | null;
+  addressHi: string | null;
+  phone: string | null;
+  active: boolean;
+}
+
+export interface Post {
+  id: string;
+  officeId: string;
+  titleEn: string;
+  titleHi: string;
+  active: boolean;
+  holder: { userId: string; username: string | null; displayName: string | null; assignedFrom: string } | null;
+}
+
+export interface NotifiedService {
+  id: string;
+  nodeId: string;
+  code: string;
+  nameEn: string;
+  nameHi: string;
+  departmentEn: string;
+  departmentHi: string;
+  designatedOfficerPostId: string | null;
+  firstAppealOfficerPostId: string | null;
+  secondAppellateAuthorityEn: string | null;
+  secondAppellateAuthorityHi: string | null;
+  slaDays: number;
+  sourceActEn: string;
+  sourceActHi: string;
+  isNotified: boolean;
+  active: boolean;
+}
+
 export interface AuditEvent {
   seq: string;
   occurredAt: string;

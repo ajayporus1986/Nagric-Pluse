@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | `db` | `postgres:16` | — |
 | `migrate` (one-shot) | `api` image, `migrate.js` then `db-roles.js` | db as schema owner |
-| `api` | `api` image, `dist/server.js` | db as `np_platform`, `np_iam`, `np_audit` |
+| `api` | `api` image, `dist/server.js` | db as `np_platform`, `np_iam`, `np_audit`, `np_registry` |
 | `worker` | `api` image, `dist/worker/main.js` | db as `np_relay`, `np_platform`, `np_iam` |
 | `web` | nginx serving the console, proxying `/api` | api |
 
@@ -36,14 +36,15 @@ The bootstrap prints one-time passwords once. Hand them over in person. Each use
 
 ## Database roles
 
-Migrations create four NOLOGIN group roles with least-privilege grants. `db-roles.js` creates one LOGIN role per service and makes it a member of exactly one group:
+Migrations create five NOLOGIN group roles with least-privilege grants. `db-roles.js` creates one LOGIN role per service and makes it a member of exactly one group:
 
 | Login role | Group | Can do |
 | --- | --- | --- |
-| `np_platform` | `np_platform_rw` | Lego registry, change requests, kill switches; column-limited writes to accounts for approved resets |
+| `np_platform` | `np_platform_rw` | Lego registry, change requests, kill switches; column-limited writes to accounts for approved resets, and to `registry.services.sla_days` for approved SLA changes |
 | `np_iam` | `np_iam_rw` | accounts, sessions, rate limits |
 | `np_audit` | `np_audit_reader` | read the audit ledger, run `verify_chain()` |
 | `np_relay` | `np_audit_relay` | move outbox rows into the ledger, write signed checkpoints |
+| `np_registry` | `np_registry_rw` | offices, posts, post holders, notified services (not `sla_days`, which only the platform role changes, and only via an approved change request) |
 
 No service role can UPDATE or DELETE the audit ledger; triggers refuse it even for the owner.
 

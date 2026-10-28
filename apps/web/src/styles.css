@@ -88,7 +88,9 @@ ul.plain { list-style: none; padding: 0; margin: 0; }
 table { width: 100%; border-collapse: collapse; }
 td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
 table.list { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+table.list tr.active { background: var(--info-bg); }
 .actions { white-space: nowrap; }
+.actions .small-number { width: 4.5em; margin-right: 4px; }
 .trace { margin: 4px 0 0; padding-left: 18px; font-size: 0.85rem; }
 .dec { font-family: ui-monospace, monospace; font-size: 0.75rem; font-weight: 700; }
 .dec-BLOCK { color: var(--off); }

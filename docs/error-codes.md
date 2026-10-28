@@ -125,6 +125,17 @@ Every failure carries one of these codes in the API response (`error.code`), in 
 | `NP-USER-0002` | 404 | info | User not found. | उपयोगकर्ता नहीं मिला। |
 | `NP-USER-0003` | 409 | warn | This account holds an oversight role; disabling it needs a change request approved by a quorum. | इस खाते के पास निगरानी भूमिका है; इसे निष्क्रिय करने के लिए कोरम-स्वीकृत परिवर्तन अनुरोध आवश्यक है। |
 
+## REG
+
+| Code | HTTP | Log level | English | Hindi |
+| --- | --- | --- | --- | --- |
+| `NP-REG-0001` | 404 | info | Office not found. | कार्यालय नहीं मिला। |
+| `NP-REG-0002` | 404 | info | Post not found. | पद नहीं मिला। |
+| `NP-REG-0003` | 404 | info | Service not found. | सेवा नहीं मिली। |
+| `NP-REG-0004` | 409 | warn | This cannot be removed while other records still refer to it. | इसे हटाया नहीं जा सकता क्योंकि अन्य रिकॉर्ड अभी भी इससे जुड़े हैं। |
+| `NP-REG-0005` | 409 | info | This service code already exists here. | यह सेवा कोड यहाँ पहले से मौजूद है। |
+| `NP-REG-0006` | 409 | info | This post already has a current holder. End that assignment first. | इस पद पर पहले से कोई पदधारी है। पहले उसकी नियुक्ति समाप्त करें। |
+
 ## Audit ledger
 
 | Code | HTTP | Log level | English | Hindi |

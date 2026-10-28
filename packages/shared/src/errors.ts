@@ -108,6 +108,14 @@ export const ERRORS = {
   'NP-USER-0002': { http: 404, level: 'info', en: 'User not found.', hi: 'उपयोगकर्ता नहीं मिला।' },
   'NP-USER-0003': { http: 409, level: 'warn', en: 'This account holds an oversight role; disabling it needs a change request approved by a quorum.', hi: 'इस खाते के पास निगरानी भूमिका है; इसे निष्क्रिय करने के लिए कोरम-स्वीकृत परिवर्तन अनुरोध आवश्यक है।' },
 
+  // ---- Registry: offices, posts, services (REG) ----------------------------
+  'NP-REG-0001': { http: 404, level: 'info', en: 'Office not found.', hi: 'कार्यालय नहीं मिला।' },
+  'NP-REG-0002': { http: 404, level: 'info', en: 'Post not found.', hi: 'पद नहीं मिला।' },
+  'NP-REG-0003': { http: 404, level: 'info', en: 'Service not found.', hi: 'सेवा नहीं मिली।' },
+  'NP-REG-0004': { http: 409, level: 'warn', en: 'This cannot be removed while other records still refer to it.', hi: 'इसे हटाया नहीं जा सकता क्योंकि अन्य रिकॉर्ड अभी भी इससे जुड़े हैं।' },
+  'NP-REG-0005': { http: 409, level: 'info', en: 'This service code already exists here.', hi: 'यह सेवा कोड यहाँ पहले से मौजूद है।' },
+  'NP-REG-0006': { http: 409, level: 'info', en: 'This post already has a current holder. End that assignment first.', hi: 'इस पद पर पहले से कोई पदधारी है। पहले उसकी नियुक्ति समाप्त करें।' },
+
   // ---- Audit (AUDIT) -------------------------------------------------------
   'NP-AUDIT-0001': { http: 500, level: 'fatal', en: 'The audit log failed an integrity check.', hi: 'ऑडिट लॉग अखंडता जाँच में विफल रहा।' },
   'NP-AUDIT-0002': { http: 500, level: 'error', en: 'The action could not be recorded in the audit log, so it was not performed.', hi: 'कार्य ऑडिट लॉग में दर्ज नहीं हो सका, इसलिए नहीं किया गया।' },

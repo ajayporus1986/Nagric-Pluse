@@ -6,8 +6,9 @@
  *   np_iam        → np_iam_rw          (API identity module + worker cleanup)
  *   np_audit      → np_audit_reader    (API audit viewer)
  *   np_relay      → np_audit_relay     (worker audit relay + checkpoints)
+ *   np_registry   → np_registry_rw     (API registry module: offices/posts/services)
  *
- * Passwords come from NP_DB_PASSWORD_PLATFORM / _IAM / _AUDIT / _RELAY.
+ * Passwords come from NP_DB_PASSWORD_PLATFORM / _IAM / _AUDIT / _RELAY / _REGISTRY.
  * Run with MIGRATION_DATABASE_URL (schema owner) after migrations.
  */
 import pg from 'pg';
@@ -16,7 +17,8 @@ const ROLES = [
   { login: 'np_platform', group: 'np_platform_rw', env: 'NP_DB_PASSWORD_PLATFORM' },
   { login: 'np_iam', group: 'np_iam_rw', env: 'NP_DB_PASSWORD_IAM' },
   { login: 'np_audit', group: 'np_audit_reader', env: 'NP_DB_PASSWORD_AUDIT' },
-  { login: 'np_relay', group: 'np_audit_relay', env: 'NP_DB_PASSWORD_RELAY' }
+  { login: 'np_relay', group: 'np_audit_relay', env: 'NP_DB_PASSWORD_RELAY' },
+  { login: 'np_registry', group: 'np_registry_rw', env: 'NP_DB_PASSWORD_REGISTRY' }
 ] as const;
 
 async function main(): Promise<void> {

@@ -40,7 +40,8 @@ async function exclusive<T>(pool: pg.Pool, lockKey: number, fn: (c: pg.PoolClien
 /** Outbox tables relayed into the ledger; `source` is recorded on each ledger row. */
 const OUTBOXES = [
   { source: 'platform', table: 'platform.audit_outbox' },
-  { source: 'iam', table: 'iam.audit_outbox' }
+  { source: 'iam', table: 'iam.audit_outbox' },
+  { source: 'registry', table: 'registry.audit_outbox' }
 ] as const;
 
 /**
