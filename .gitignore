@@ -1,0 +1,20 @@
+node_modules/
+dist/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+playwright-report/
+test-results/
+.DS_Store
+Thumbs.db
+
+# e2e runtime files (logs, keys, state)
+apps/web/e2e/.tmp/
+
+# Deployment secrets
+docker/secrets/

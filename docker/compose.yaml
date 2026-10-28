@@ -1,0 +1,115 @@
+# Nagrik Pulse district pod — single-host deployment.
+#
+#   cp docker/.env.example docker/.env   # fill in every secret
+#   docker compose -f docker/compose.yaml --env-file docker/.env up -d --build
+#
+# Hardening: every service runs as a non-root user, with a read-only root
+# filesystem, all Linux capabilities dropped and no privilege escalation.
+# The database is reachable only on the internal network. TLS is expected to be
+# terminated in front of the web service (load balancer or reverse proxy).
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: ["/tmp"]
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "50m", max-file: "10" }
+
+x-db-urls: &db-urls
+  DATABASE_URL_PLATFORM: postgres://np_platform:${NP_DB_PASSWORD_PLATFORM:?}@db:5432/nagrik_pulse
+  DATABASE_URL_IAM: postgres://np_iam:${NP_DB_PASSWORD_IAM:?}@db:5432/nagrik_pulse
+  DATABASE_URL_AUDIT: postgres://np_audit:${NP_DB_PASSWORD_AUDIT:?}@db:5432/nagrik_pulse
+  DATABASE_URL_AUDIT_RELAY: postgres://np_relay:${NP_DB_PASSWORD_RELAY:?}@db:5432/nagrik_pulse
+  DATABASE_URL_REGISTRY: postgres://np_registry:${NP_DB_PASSWORD_REGISTRY:?}@db:5432/nagrik_pulse
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: nagrik_pulse
+      POSTGRES_USER: np_owner
+      POSTGRES_PASSWORD: ${NP_DB_OWNER_PASSWORD:?}
+      # SCRAM for every connection, including local.
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    volumes: [db-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U np_owner -d nagrik_pulse"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [internal]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    shm_size: 256m
+
+  # One-shot: apply migrations and create/refresh the per-module login roles.
+  migrate:
+    build: { context: .., dockerfile: docker/Dockerfile.api }
+    image: nagrik-pulse/api:local
+    command: ["sh", "-c", "node dist/scripts/migrate.js && node dist/scripts/db-roles.js"]
+    environment:
+      MIGRATION_DATABASE_URL: postgres://np_owner:${NP_DB_OWNER_PASSWORD:?}@db:5432/nagrik_pulse
+      NP_DB_PASSWORD_PLATFORM: ${NP_DB_PASSWORD_PLATFORM:?}
+      NP_DB_PASSWORD_IAM: ${NP_DB_PASSWORD_IAM:?}
+      NP_DB_PASSWORD_AUDIT: ${NP_DB_PASSWORD_AUDIT:?}
+      NP_DB_PASSWORD_RELAY: ${NP_DB_PASSWORD_RELAY:?}
+      NP_DB_PASSWORD_REGISTRY: ${NP_DB_PASSWORD_REGISTRY:?}
+    depends_on: { db: { condition: service_healthy } }
+    networks: [internal]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: "no"
+
+  api:
+    image: nagrik-pulse/api:local
+    <<: *hardening
+    environment:
+      <<: *db-urls
+      NODE_ENV: ${NP_NODE_ENV:-production}
+      LOG_LEVEL: ${NP_LOG_LEVEL:-info}
+      PORT: "8080"
+      PUBLIC_ORIGIN: ${NP_PUBLIC_ORIGIN:?}
+      COOKIE_SECURE: ${NP_COOKIE_SECURE:-true}
+      TRUST_PROXY: "1"
+      RATE_LIMIT_PER_IP_PER_MIN: ${NP_RATE_LIMIT_PER_IP_PER_MIN:-600}
+      FIELD_ENCRYPTION_KEYS: ${NP_FIELD_ENCRYPTION_KEYS:?}
+      FIELD_ENCRYPTION_ACTIVE_KEY: ${NP_FIELD_ENCRYPTION_ACTIVE_KEY:?}
+    depends_on: { migrate: { condition: service_completed_successfully } }
+    networks: [internal]
+
+  worker:
+    image: nagrik-pulse/api:local
+    <<: *hardening
+    command: ["node", "dist/worker/main.js"]
+    environment:
+      <<: *db-urls
+      NODE_ENV: ${NP_NODE_ENV:-production}
+      LOG_LEVEL: ${NP_LOG_LEVEL:-info}
+      AUDIT_SIGNING_KEY_FILE: /run/secrets/audit_signing_key
+    secrets: [audit_signing_key]
+    depends_on: { migrate: { condition: service_completed_successfully } }
+    networks: [internal]
+    healthcheck: { disable: true }
+
+  web:
+    build: { context: .., dockerfile: docker/Dockerfile.web }
+    image: nagrik-pulse/web:local
+    <<: *hardening
+    tmpfs: ["/tmp", "/var/cache/nginx"]
+    ports: ["${NP_HTTP_BIND:-127.0.0.1}:${NP_HTTP_PORT:-8081}:8081"]
+    depends_on: { api: { condition: service_healthy } }
+    networks: [internal]
+
+secrets:
+  audit_signing_key:
+    file: ${NP_AUDIT_SIGNING_KEY_FILE:-./secrets/audit-signing.pem}
+
+volumes:
+  db-data:
+
+networks:
+  internal:

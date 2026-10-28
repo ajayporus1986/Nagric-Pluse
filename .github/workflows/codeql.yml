@@ -1,0 +1,40 @@
+name: codeql
+# Static security analysis (CodeQL, security-extended queries).
+# Code-scanning upload needs GitHub Code Security on private repositories, so
+# results are kept as a SARIF artifact and the job FAILS if any finding exists.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '27 3 * * 1'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v3
+        with:
+          upload: never
+          output: sarif-results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: codeql-sarif
+          path: sarif-results
+      - name: Fail on findings
+        run: |
+          count=$(jq '[.runs[].results[]] | length' sarif-results/*.sarif)
+          echo "CodeQL findings: $count"
+          jq -r '.runs[].results[] | "\(.ruleId): \(.message.text) @ \(.locations[0].physicalLocation.artifactLocation.uri):\(.locations[0].physicalLocation.region.startLine)"' sarif-results/*.sarif
+          test "$count" -eq 0

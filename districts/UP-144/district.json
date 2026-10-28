@@ -1,0 +1,25 @@
+{
+  "$comment": "District package for Gautam Buddh Nagar (LGD 144), Uttar Pradesh. The tehsils, blocks and development authorities below are sourced from gbnagar.nic.in and English Wikipedia (cross-checked 27 Oct 2026) and cover only the jurisdiction tree. Urban local bodies, wards, villages, offices, posts and the Janhit Guarantee service/SLA list are NOT yet loaded: those need Ajay's confirmation before they go in, per the open-inputs note in the build-plan doc, so nothing here is guessed. The tehsil-to-block parentage follows the conventional LGD nesting (SUBDISTRICT > BLOCK) and should be double-checked along with everything else still pending.",
+  "packageId": "UP-144",
+  "version": "0.2.0",
+  "languages": ["hi", "en"],
+  "defaultLocale": "hi",
+  "nodes": [
+    { "id": "IN", "parentId": null, "level": "NATION", "lgdCode": null, "nameEn": "India", "nameHi": "भारत" },
+    { "id": "UP", "parentId": "IN", "level": "STATE", "lgdCode": "9", "nameEn": "Uttar Pradesh", "nameHi": "उत्तर प्रदेश" },
+    { "id": "D144", "parentId": "UP", "level": "DISTRICT", "lgdCode": "144", "nameEn": "Gautam Buddha Nagar", "nameHi": "गौतम बुद्ध नगर" },
+
+    { "id": "SUB_SADAR", "parentId": "D144", "level": "SUBDISTRICT", "lgdCode": null, "nameEn": "Sadar (Noida) tehsil", "nameHi": "सदर (नोएडा) तहसील" },
+    { "id": "SUB_DADRI", "parentId": "D144", "level": "SUBDISTRICT", "lgdCode": null, "nameEn": "Dadri tehsil", "nameHi": "दादरी तहसील" },
+    { "id": "SUB_JEWAR", "parentId": "D144", "level": "SUBDISTRICT", "lgdCode": null, "nameEn": "Jewar tehsil", "nameHi": "जेवर तहसील" },
+
+    { "id": "BLK_BISRAKH", "parentId": "SUB_SADAR", "level": "BLOCK", "lgdCode": null, "nameEn": "Bisrakh block", "nameHi": "बिसरख ब्लॉक" },
+    { "id": "BLK_DANKAUR", "parentId": "SUB_SADAR", "level": "BLOCK", "lgdCode": null, "nameEn": "Dankaur block", "nameHi": "दनकौर ब्लॉक" },
+    { "id": "BLK_DADRI", "parentId": "SUB_DADRI", "level": "BLOCK", "lgdCode": null, "nameEn": "Dadri block", "nameHi": "दादरी ब्लॉक" },
+    { "id": "BLK_JEWAR", "parentId": "SUB_JEWAR", "level": "BLOCK", "lgdCode": null, "nameEn": "Jewar block", "nameHi": "जेवर ब्लॉक" },
+
+    { "id": "AUTH_NOIDA", "parentId": "D144", "level": "AUTHORITY", "lgdCode": null, "nameEn": "New Okhla Industrial Development Authority (Noida Authority)", "nameHi": "नया ओखला औद्योगिक विकास प्राधिकरण (नोएडा प्राधिकरण)" },
+    { "id": "AUTH_GNIDA", "parentId": "D144", "level": "AUTHORITY", "lgdCode": null, "nameEn": "Greater Noida Industrial Development Authority", "nameHi": "ग्रेटर नोएडा औद्योगिक विकास प्राधिकरण" },
+    { "id": "AUTH_YEIDA", "parentId": "D144", "level": "AUTHORITY", "lgdCode": null, "nameEn": "Yamuna Expressway Industrial Development Authority", "nameHi": "यमुना एक्सप्रेसवे औद्योगिक विकास प्राधिकरण" }
+  ]
+}
