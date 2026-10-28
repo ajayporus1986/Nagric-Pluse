@@ -161,6 +161,22 @@ const RAW: unknown[] = [
     ]
   },
   {
+    id: 'org',
+    version: '0.1.0',
+    name: { en: 'Organization directory', hi: 'संगठन निर्देशिका' },
+    realm: 'GOVERNMENT',
+    requires: ['platform', 'iam'],
+    features: [
+      {
+        code: 'org.directory',
+        name: { en: 'Departments, authorities & service providers', hi: 'विभाग, प्राधिकरण एवं सेवा प्रदाता' },
+        actions: ['view', 'create', 'update', 'delete'],
+        auditedActions: ['create', 'update', 'delete'],
+        defaultGrants: { ...ALL_STAFF_VIEW, ...REGISTRY_ADMIN }
+      }
+    ]
+  },
+  {
     id: 'citizen',
     version: '0.1.0',
     name: { en: 'Citizen identity', hi: 'नागरिक पहचान' },

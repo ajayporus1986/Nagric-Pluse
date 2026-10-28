@@ -125,7 +125,7 @@ Every failure carries one of these codes in the API response (`error.code`), in 
 | `NP-USER-0002` | 404 | info | User not found. | उपयोगकर्ता नहीं मिला। |
 | `NP-USER-0003` | 409 | warn | This account holds an oversight role; disabling it needs a change request approved by a quorum. | इस खाते के पास निगरानी भूमिका है; इसे निष्क्रिय करने के लिए कोरम-स्वीकृत परिवर्तन अनुरोध आवश्यक है। |
 
-## REG
+## Office & service registry
 
 | Code | HTTP | Log level | English | Hindi |
 | --- | --- | --- | --- | --- |
@@ -136,7 +136,23 @@ Every failure carries one of these codes in the API response (`error.code`), in 
 | `NP-REG-0005` | 409 | info | This service code already exists here. | यह सेवा कोड यहाँ पहले से मौजूद है। |
 | `NP-REG-0006` | 409 | info | This post already has a current holder. End that assignment first. | इस पद पर पहले से कोई पदधारी है। पहले उसकी नियुक्ति समाप्त करें। |
 
-## CIT
+## Jurisdiction classification
+
+| Code | HTTP | Log level | English | Hindi |
+| --- | --- | --- | --- | --- |
+| `NP-CLASS-0001` | 404 | info | Unknown classification axis. | अज्ञात वर्गीकरण अक्ष। |
+| `NP-CLASS-0002` | 404 | info | Unknown value for this classification axis. | इस वर्गीकरण अक्ष के लिए अज्ञात मान। |
+| `NP-CLASS-0003` | 400 | info | This axis allows more than one value and cannot be set this way. | यह अक्ष एक से अधिक मान स्वीकार करता है और इस तरह सेट नहीं किया जा सकता। |
+
+## Organization directory
+
+| Code | HTTP | Log level | English | Hindi |
+| --- | --- | --- | --- | --- |
+| `NP-ORG-0001` | 404 | info | Organization entity not found. | संगठन संस्था नहीं मिली। |
+| `NP-ORG-0002` | 409 | warn | This cannot be removed while other records still refer to it. | इसे हटाया नहीं जा सकता क्योंकि अन्य रिकॉर्ड अभी भी इससे जुड़े हैं। |
+| `NP-ORG-0003` | 400 | info | A parent entity must be in the same or an ancestor node. | मूल संस्था उसी या पूर्वज क्षेत्र में होनी चाहिए। |
+
+## Citizen identity
 
 | Code | HTTP | Log level | English | Hindi |
 | --- | --- | --- | --- | --- |

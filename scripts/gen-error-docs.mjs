@@ -9,7 +9,8 @@ const names = {
   CFG: 'Configuration and startup', DB: 'Database', HTTP: 'HTTP', VAL: 'Validation', AUTH: 'Sign-in', MFA: 'Second factor',
   SESS: 'Sessions', CSRF: 'Request forgery protection', RATE: 'Rate limits', POL: 'Access policy (Lego controls)', SCOPE: 'Jurisdiction tree',
   CR: 'Change requests and quorum', KILL: 'Emergency stop', USER: 'Staff accounts', AUDIT: 'Audit ledger', WORK: 'Background worker',
-  CLIENT: 'Web console (client side)', INT: 'Unexpected'
+  CLIENT: 'Web console (client side)', INT: 'Unexpected', REG: 'Office & service registry', CIT: 'Citizen identity',
+  CLASS: 'Jurisdiction classification', ORG: 'Organization directory'
 };
 let out = '# Error codes\n\n_Generated from `packages/shared/src/errors.ts` by `scripts/gen-error-docs.mjs`. Do not edit by hand._\n\n';
 out += 'Every failure carries one of these codes in the API response (`error.code`), in the server log (`errCode`) and in the console, together with a request reference (`requestId` / `reqId`). To investigate a report, search the logs for the reference.\n\n';

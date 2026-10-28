@@ -161,7 +161,24 @@ const en = {
   sourceAct: 'Notified under',
   proposeSlaChange: 'Propose new time limit',
   retire: 'Retire',
-  selectOffice: 'Select an office to see its posts'
+  selectOffice: 'Select an office to see its posts',
+  // Org directory
+  nav_org: 'Organizations',
+  orgTitle: 'Departments, authorities & service providers',
+  entities: 'Organizations',
+  createEntity: 'Add organization',
+  entityKind: 'Kind',
+  entityName: 'Name',
+  parentEntity: 'Parent organization (optional)',
+  contact: 'Contact (optional)',
+  linkedTo: 'Linked to service',
+  // Jurisdiction classification
+  nav_classification: 'Jurisdiction type',
+  classificationTitle: 'Jurisdiction classification',
+  classificationIntro: 'What kind of place this is -- urban body type, policing model, Union Territory status and more. Each value is set here only, never assumed from the area’s name or size.',
+  currentValue: 'Current value',
+  unset: 'Not set',
+  proposeClassification: 'Propose value'
 };
 
 type Dict = typeof en;
@@ -310,7 +327,22 @@ const hi: Dict = {
   sourceAct: 'अंतर्गत सूचित',
   proposeSlaChange: 'नई समय-सीमा का प्रस्ताव',
   retire: 'हटाएँ',
-  selectOffice: 'पद देखने के लिए कार्यालय चुनें'
+  selectOffice: 'पद देखने के लिए कार्यालय चुनें',
+  nav_org: 'संगठन',
+  orgTitle: 'विभाग, प्राधिकरण एवं सेवा प्रदाता',
+  entities: 'संगठन',
+  createEntity: 'संगठन जोड़ें',
+  entityKind: 'प्रकार',
+  entityName: 'नाम',
+  parentEntity: 'मूल संगठन (वैकल्पिक)',
+  contact: 'संपर्क (वैकल्पिक)',
+  linkedTo: 'सेवा से जुड़ा',
+  nav_classification: 'क्षेत्राधिकार प्रकार',
+  classificationTitle: 'क्षेत्राधिकार वर्गीकरण',
+  classificationIntro: 'यह स्थान किस प्रकार का है -- शहरी निकाय प्रकार, पुलिसिंग मॉडल, संघ राज्य क्षेत्र स्थिति और अधिक। हर मान यहीं निर्धारित होता है, नाम या आकार से अनुमानित नहीं।',
+  currentValue: 'वर्तमान मान',
+  unset: 'सेट नहीं',
+  proposeClassification: 'मान प्रस्तावित करें'
 };
 
 export const DICTS: Record<Locale, Dict> = { en, hi };

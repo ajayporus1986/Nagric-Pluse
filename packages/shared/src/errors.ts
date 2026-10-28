@@ -116,6 +116,16 @@ export const ERRORS = {
   'NP-REG-0005': { http: 409, level: 'info', en: 'This service code already exists here.', hi: 'यह सेवा कोड यहाँ पहले से मौजूद है।' },
   'NP-REG-0006': { http: 409, level: 'info', en: 'This post already has a current holder. End that assignment first.', hi: 'इस पद पर पहले से कोई पदधारी है। पहले उसकी नियुक्ति समाप्त करें।' },
 
+  // ---- Jurisdiction classification (CLASS) ---------------------------------
+  'NP-CLASS-0001': { http: 404, level: 'info', en: 'Unknown classification axis.', hi: 'अज्ञात वर्गीकरण अक्ष।' },
+  'NP-CLASS-0002': { http: 404, level: 'info', en: 'Unknown value for this classification axis.', hi: 'इस वर्गीकरण अक्ष के लिए अज्ञात मान।' },
+  'NP-CLASS-0003': { http: 400, level: 'info', en: 'This axis allows more than one value and cannot be set this way.', hi: 'यह अक्ष एक से अधिक मान स्वीकार करता है और इस तरह सेट नहीं किया जा सकता।' },
+
+  // ---- Organization directory (ORG) ----------------------------------------
+  'NP-ORG-0001': { http: 404, level: 'info', en: 'Organization entity not found.', hi: 'संगठन संस्था नहीं मिली।' },
+  'NP-ORG-0002': { http: 409, level: 'warn', en: 'This cannot be removed while other records still refer to it.', hi: 'इसे हटाया नहीं जा सकता क्योंकि अन्य रिकॉर्ड अभी भी इससे जुड़े हैं।' },
+  'NP-ORG-0003': { http: 400, level: 'info', en: 'A parent entity must be in the same or an ancestor node.', hi: 'मूल संस्था उसी या पूर्वज क्षेत्र में होनी चाहिए।' },
+
   // ---- Citizen identity (CIT) -----------------------------------------------
   'NP-CIT-0001': { http: 403, level: 'info', en: 'Citizen self-service is not switched on here yet.', hi: 'नागरिक स्व-सेवा अभी यहाँ सक्रिय नहीं है।' },
   'NP-CIT-0002': { http: 400, level: 'info', en: 'Enter a valid 10-digit mobile number.', hi: 'एक मान्य 10 अंकों का मोबाइल नंबर दर्ज करें।' },

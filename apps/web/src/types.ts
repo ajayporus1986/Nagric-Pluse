@@ -137,6 +137,29 @@ export interface NotifiedService {
   sourceActHi: string;
   isNotified: boolean;
   active: boolean;
+  entityId: string | null;
+}
+
+export interface OrgEntity {
+  id: string;
+  nodeId: string;
+  kind: string;
+  nameEn: string;
+  nameHi: string;
+  parentEntityId: string | null;
+  contactEn: string | null;
+  contactHi: string | null;
+  active: boolean;
+}
+
+export interface ClassificationAxis {
+  code: string;
+  nameEn: string;
+  nameHi: string;
+  descriptionEn: string | null;
+  multi: boolean;
+  values: { code: string; nameEn: string; nameHi: string }[];
+  current: string | null;
 }
 
 export interface AuditEvent {

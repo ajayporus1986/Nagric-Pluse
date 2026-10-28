@@ -67,6 +67,46 @@ export function registerPlatformRoutes(app: App, deps: AppDeps): void {
     }
   );
 
+  // ---- GET /classifications ------------------------------------------------
+  // Jurisdiction classification (Phase 1.5): axes/values are an admin-addable
+  // catalogue (never a hardcoded enum -- see 0010_classification.sql), and
+  // node_classifications holds the facts actually set at this node. Unlike
+  // Lego module/feature settings, a classification is NOT inherited from the
+  // parent: a district's own administrative/policing structure doesn't flow
+  // down from its state.
+  app.get(
+    '/api/v1/classifications',
+    {
+      config: { access: { kind: 'feature', feature: 'platform.scope', action: 'view', node: (req) => (req.query as { nodeId: string }).nodeId } },
+      schema: { querystring: z.object({ nodeId }).strict() }
+    },
+    async (req) => {
+      policy.pathOf(req.query.nodeId); // 404s if the node is unknown
+      const axesRows = await query<{ code: string; name_en: string; name_hi: string; description_en: string | null; multi: boolean }>(
+        pools.platform,
+        'SELECT code, name_en, name_hi, description_en, multi FROM platform.classification_axes WHERE active ORDER BY code'
+      );
+      const valuesRows = await query<{ axis_code: string; code: string; name_en: string; name_hi: string }>(
+        pools.platform,
+        'SELECT axis_code, code, name_en, name_hi FROM platform.classification_values WHERE active ORDER BY axis_code, name_en'
+      );
+      const setRows = await query<{ axis_code: string; value_code: string; updated_at: Date }>(
+        pools.platform,
+        'SELECT axis_code, value_code, updated_at FROM platform.node_classifications WHERE node_id = $1',
+        [req.query.nodeId]
+      );
+      const setByAxis = new Map(setRows.rows.map((r) => [r.axis_code, r]));
+      return {
+        nodeId: req.query.nodeId,
+        axes: axesRows.rows.map((a) => ({
+          code: a.code, nameEn: a.name_en, nameHi: a.name_hi, descriptionEn: a.description_en, multi: a.multi,
+          values: valuesRows.rows.filter((v) => v.axis_code === a.code).map((v) => ({ code: v.code, nameEn: v.name_en, nameHi: v.name_hi })),
+          current: setByAxis.get(a.code)?.value_code ?? null
+        }))
+      };
+    }
+  );
+
   // ---- GET /capabilities --------------------------------------------------
   app.get(
     '/api/v1/capabilities',
