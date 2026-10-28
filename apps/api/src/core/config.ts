@@ -32,6 +32,7 @@ const schema = z
     DATABASE_URL_AUDIT: z.string().url().optional(),
     DATABASE_URL_REGISTRY: z.string().url().optional(),
     DATABASE_URL_CITIZEN: z.string().url().optional(),
+    DATABASE_URL_ORG: z.string().url().optional(),
     DB_POOL_MAX: z.coerce.number().int().min(1).max(200).default(20),
     DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(100).max(120_000).default(10_000),
 
@@ -72,14 +73,14 @@ const schema = z
   .superRefine((c, ctx) => {
     // Production must use one database role per module, never a shared URL.
     if (c.NODE_ENV === 'production') {
-      for (const k of ['DATABASE_URL_PLATFORM', 'DATABASE_URL_IAM', 'DATABASE_URL_AUDIT', 'DATABASE_URL_REGISTRY', 'DATABASE_URL_CITIZEN'] as const) {
+      for (const k of ['DATABASE_URL_PLATFORM', 'DATABASE_URL_IAM', 'DATABASE_URL_AUDIT', 'DATABASE_URL_REGISTRY', 'DATABASE_URL_CITIZEN', 'DATABASE_URL_ORG'] as const) {
         if (!c[k]) ctx.addIssue({ code: 'custom', path: [k], message: 'required in production' });
       }
       if (!c.COOKIE_SECURE) ctx.addIssue({ code: 'custom', path: ['COOKIE_SECURE'], message: 'must be true in production' });
       if (!c.PUBLIC_ORIGIN.startsWith('https://')) ctx.addIssue({ code: 'custom', path: ['PUBLIC_ORIGIN'], message: 'must be https in production' });
       // The console OTP sender only logs the code: never acceptable once real citizens use it.
       if (c.SMS_PROVIDER === 'console') ctx.addIssue({ code: 'custom', path: ['SMS_PROVIDER'], message: 'console stub cannot be used in production; set webhook' });
-    } else if (!c.DATABASE_URL && !(c.DATABASE_URL_PLATFORM && c.DATABASE_URL_IAM && c.DATABASE_URL_AUDIT && c.DATABASE_URL_REGISTRY && c.DATABASE_URL_CITIZEN)) {
+    } else if (!c.DATABASE_URL && !(c.DATABASE_URL_PLATFORM && c.DATABASE_URL_IAM && c.DATABASE_URL_AUDIT && c.DATABASE_URL_REGISTRY && c.DATABASE_URL_CITIZEN && c.DATABASE_URL_ORG)) {
       ctx.addIssue({ code: 'custom', path: ['DATABASE_URL'], message: 'set DATABASE_URL or all per-module URLs' });
     }
     if (c.SMS_PROVIDER === 'webhook' && (!c.SMS_WEBHOOK_URL || !c.SMS_WEBHOOK_SECRET)) {
@@ -95,7 +96,7 @@ const schema = z
 /** Validated configuration object. */
 export type Config = z.output<typeof schema> & {
   /** Resolved connection string per module (falls back to DATABASE_URL in dev/test). */
-  db: { platform: string; iam: string; audit: string; registry: string; citizen: string };
+  db: { platform: string; iam: string; audit: string; registry: string; citizen: string; org: string };
 };
 
 /**
@@ -118,7 +119,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       iam: c.DATABASE_URL_IAM ?? fallback,
       audit: c.DATABASE_URL_AUDIT ?? fallback,
       registry: c.DATABASE_URL_REGISTRY ?? fallback,
-      citizen: c.DATABASE_URL_CITIZEN ?? fallback
+      citizen: c.DATABASE_URL_CITIZEN ?? fallback,
+      org: c.DATABASE_URL_ORG ?? fallback
     }
   };
 }
@@ -140,7 +142,7 @@ export function describeConfig(c: Config): Record<string, unknown> {
     publicOrigin: c.PUBLIC_ORIGIN,
     cookieSecure: c.COOKIE_SECURE,
     trustProxy: c.TRUST_PROXY,
-    db: { platform: host(c.db.platform), iam: host(c.db.iam), audit: host(c.db.audit), registry: host(c.db.registry), citizen: host(c.db.citizen) },
+    db: { platform: host(c.db.platform), iam: host(c.db.iam), audit: host(c.db.audit), registry: host(c.db.registry), citizen: host(c.db.citizen), org: host(c.db.org) },
     smsProvider: c.SMS_PROVIDER,
     sharedDbUrl: !c.DATABASE_URL_PLATFORM,
     encryptionKeyIds: c.FIELD_ENCRYPTION_KEYS.map((k) => k.split(':')[0]),

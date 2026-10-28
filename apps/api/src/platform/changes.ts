@@ -42,7 +42,13 @@ export const PAYLOADS = {
   // Changes the statutory time limit of one notified service. This is the
   // only way sla_days may change: never a direct edit, so a citizen's
   // guaranteed timeline cannot be altered without a Realm Governor quorum.
-  SERVICE_SLA_SET: z.object({ serviceId: z.string().uuid(), slaDays: z.number().int().min(1).max(365) }).strict()
+  SERVICE_SLA_SET: z.object({ serviceId: z.string().uuid(), slaDays: z.number().int().min(1).max(365) }).strict(),
+  // Sets (or clears, with valueCode null) a single-valued classification axis
+  // on the node the request is raised at -- e.g. urbanBodyType=NAGAR_PANCHAYAT,
+  // policingModel=DISTRICT_POLICE_HQ. Never a direct edit, same quorum as
+  // every other Lego setting, so one person cannot silently re-tag a
+  // district's administrative structure.
+  NODE_CLASSIFICATION_SET: z.object({ axisCode: z.string().regex(/^[a-z][a-zA-Z0-9]{1,40}$/), valueCode: z.string().regex(/^[A-Z][A-Z0-9_]{1,60}$/).nullable() }).strict()
 } as const;
 
 export type ChangeKind = keyof typeof PAYLOADS;
@@ -212,6 +218,20 @@ export async function validateChange(db: pg.PoolClient, state: PolicyState, kind
       if (row.node_id !== nodeId) throw new AppError('NP-VAL-0001', {}, { fields: [{ path: 'nodeId', message: `service belongs to ${row.node_id}` }] });
       if (row.sla_days === p.slaDays) throw new AppError('NP-CR-0005', { current: row.sla_days });
       targetKey = `SERVICE_SLA_SET:${p.serviceId}`;
+      break;
+    }
+    case 'NODE_CLASSIFICATION_SET': {
+      const p = payload as z.infer<typeof PAYLOADS.NODE_CLASSIFICATION_SET>;
+      const axis = await db.query<{ multi: boolean }>('SELECT multi FROM platform.classification_axes WHERE code = $1 AND active', [p.axisCode]);
+      if (!axis.rows[0]) throw new AppError('NP-CLASS-0001', { axisCode: p.axisCode });
+      if (axis.rows[0].multi) throw new AppError('NP-CLASS-0003', { axisCode: p.axisCode });
+      if (p.valueCode !== null) {
+        const val = await db.query('SELECT 1 FROM platform.classification_values WHERE axis_code = $1 AND code = $2 AND active', [p.axisCode, p.valueCode]);
+        if (!val.rowCount) throw new AppError('NP-CLASS-0002', { axisCode: p.axisCode, valueCode: p.valueCode });
+      }
+      const cur = await db.query<{ value_code: string }>('SELECT value_code FROM platform.node_classifications WHERE node_id = $1 AND axis_code = $2', [nodeId, p.axisCode]);
+      if ((cur.rows[0]?.value_code ?? null) === p.valueCode) throw new AppError('NP-CR-0005', { current: cur.rows[0]?.value_code ?? null });
+      targetKey = `NODE_CLASSIFICATION_SET:${nodeId}:${p.axisCode}`;
       break;
     }
   }
@@ -409,6 +429,20 @@ export async function applyChange(
         (cr.payload as { serviceId: string }).serviceId, slaDays, cr.id
       ]);
       if (r.rowCount !== 1) throw new AppError('NP-CR-0008', { reason: 'service no longer active' });
+      return {};
+    }
+    case 'NODE_CLASSIFICATION_SET': {
+      const cp = cr.payload as unknown as { axisCode: string; valueCode: string | null };
+      if (cp.valueCode === null) {
+        await c.query('DELETE FROM platform.node_classifications WHERE node_id = $1 AND axis_code = $2', [n, cp.axisCode]);
+      } else {
+        await c.query(
+          `INSERT INTO platform.node_classifications (node_id, axis_code, value_code, change_request_id, created_by)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (node_id, axis_code) DO UPDATE SET value_code = EXCLUDED.value_code, change_request_id = EXCLUDED.change_request_id, updated_at = now()`,
+          [n, cp.axisCode, cp.valueCode, cr.id, cr.proposed_by]
+        );
+      }
       return {};
     }
   }

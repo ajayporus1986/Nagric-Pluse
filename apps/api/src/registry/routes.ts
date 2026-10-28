@@ -69,7 +69,12 @@ const serviceCreateBody = z
     secondAppellateAuthorityEn: z.string().trim().max(300).optional(),
     secondAppellateAuthorityHi: z.string().trim().max(300).optional(),
     slaDays: z.number().int().min(1).max(365),
-    isNotified: z.boolean().optional()
+    isNotified: z.boolean().optional(),
+    // Optional link into the org directory (Phase 1.5): lets a service point
+    // at a real department/authority entity instead of only free-text
+    // departmentEn/Hi. Nullable and optional so existing districts that
+    // haven't adopted the org directory yet are unaffected.
+    entityId: z.string().uuid().optional()
   })
   .strict();
 // Everything a direct edit may touch, except sla_days (see module comment).
@@ -365,11 +370,11 @@ export function registerRegistryRoutes(app: App, deps: AppDeps): void {
         id: string; node_id: string; code: string; name_en: string; name_hi: string; department_en: string; department_hi: string;
         designated_officer_post_id: string | null; first_appeal_officer_post_id: string | null;
         second_appellate_authority_en: string | null; second_appellate_authority_hi: string | null;
-        sla_days: number; source_act_en: string; source_act_hi: string; is_notified: boolean; active: boolean;
+        sla_days: number; source_act_en: string; source_act_hi: string; is_notified: boolean; active: boolean; entity_id: string | null;
       }>(
         pools.registry,
         `SELECT id, node_id, code, name_en, name_hi, department_en, department_hi, designated_officer_post_id, first_appeal_officer_post_id,
-                second_appellate_authority_en, second_appellate_authority_hi, sla_days, source_act_en, source_act_hi, is_notified, active
+                second_appellate_authority_en, second_appellate_authority_hi, sla_days, source_act_en, source_act_hi, is_notified, active, entity_id
            FROM registry.services WHERE node_id = ANY($1::text[]) AND active ORDER BY name_en LIMIT 2000`,
         [subtree]
       );
@@ -378,7 +383,7 @@ export function registerRegistryRoutes(app: App, deps: AppDeps): void {
           id: r.id, nodeId: r.node_id, code: r.code, nameEn: r.name_en, nameHi: r.name_hi, departmentEn: r.department_en, departmentHi: r.department_hi,
           designatedOfficerPostId: r.designated_officer_post_id, firstAppealOfficerPostId: r.first_appeal_officer_post_id,
           secondAppellateAuthorityEn: r.second_appellate_authority_en, secondAppellateAuthorityHi: r.second_appellate_authority_hi,
-          slaDays: r.sla_days, sourceActEn: r.source_act_en, sourceActHi: r.source_act_hi, isNotified: r.is_notified, active: r.active
+          slaDays: r.sla_days, sourceActEn: r.source_act_en, sourceActHi: r.source_act_hi, isNotified: r.is_notified, active: r.active, entityId: r.entity_id
         }))
       };
     }
@@ -393,13 +398,18 @@ export function registerRegistryRoutes(app: App, deps: AppDeps): void {
       const id = await withTx(pools.registry, async (c) => {
         const exists = await c.query('SELECT 1 FROM registry.services WHERE node_id = $1 AND code = $2', [b.nodeId, b.code]);
         if (exists.rowCount) throw new AppError('NP-REG-0005', { code: b.code });
+        if (b.entityId) {
+          const e = await c.query('SELECT 1 FROM org.entities WHERE id = $1 AND active', [b.entityId]);
+          if (!e.rowCount) throw new AppError('NP-ORG-0001', { id: b.entityId });
+        }
         const r = await c.query<{ id: string }>(
           `INSERT INTO registry.services (node_id, code, name_en, name_hi, department_en, department_hi, designated_officer_post_id,
-                                           first_appeal_officer_post_id, second_appellate_authority_en, second_appellate_authority_hi, sla_days, is_notified, created_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+                                           first_appeal_officer_post_id, second_appellate_authority_en, second_appellate_authority_hi, sla_days, is_notified, entity_id, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
           [
             b.nodeId, b.code, b.nameEn, b.nameHi, b.departmentEn, b.departmentHi, b.designatedOfficerPostId ?? null,
-            b.firstAppealOfficerPostId ?? null, b.secondAppellateAuthorityEn ?? null, b.secondAppellateAuthorityHi ?? null, b.slaDays, b.isNotified ?? true, auth.userId
+            b.firstAppealOfficerPostId ?? null, b.secondAppellateAuthorityEn ?? null, b.secondAppellateAuthorityHi ?? null, b.slaDays, b.isNotified ?? true,
+            b.entityId ?? null, auth.userId
           ]
         );
         const newId = r.rows[0]!.id;
@@ -422,17 +432,21 @@ export function registerRegistryRoutes(app: App, deps: AppDeps): void {
       const auth = authOf(req);
       const b = req.body;
       await withTx(pools.registry, async (c) => {
+        if (b.entityId) {
+          const e = await c.query('SELECT 1 FROM org.entities WHERE id = $1 AND active', [b.entityId]);
+          if (!e.rowCount) throw new AppError('NP-ORG-0001', { id: b.entityId });
+        }
         const r = await c.query(
           `UPDATE registry.services SET
              name_en = coalesce($2, name_en), name_hi = coalesce($3, name_hi),
              department_en = coalesce($4, department_en), department_hi = coalesce($5, department_hi),
              designated_officer_post_id = coalesce($6, designated_officer_post_id), first_appeal_officer_post_id = coalesce($7, first_appeal_officer_post_id),
              second_appellate_authority_en = coalesce($8, second_appellate_authority_en), second_appellate_authority_hi = coalesce($9, second_appellate_authority_hi),
-             is_notified = coalesce($10, is_notified), active = coalesce($11, active), updated_at = now()
+             is_notified = coalesce($10, is_notified), active = coalesce($11, active), entity_id = coalesce($12, entity_id), updated_at = now()
            WHERE id = $1 AND active RETURNING node_id`,
           [
             req.params.id, b.nameEn, b.nameHi, b.departmentEn, b.departmentHi, b.designatedOfficerPostId, b.firstAppealOfficerPostId,
-            b.secondAppellateAuthorityEn, b.secondAppellateAuthorityHi, b.isNotified, b.active
+            b.secondAppellateAuthorityEn, b.secondAppellateAuthorityHi, b.isNotified, b.active, b.entityId
           ]
         );
         if (!r.rows[0]) throw new AppError('NP-REG-0003', { id: req.params.id });

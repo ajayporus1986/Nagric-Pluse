@@ -10,7 +10,7 @@ import { useState, type FormEvent } from 'react';
 import { del, get, post } from '../api';
 import { Dialog, ErrorBox, Field, useAction, useAsync } from '../components';
 import { useT } from '../i18n';
-import type { Capabilities, NotifiedService, Office, Post } from '../types';
+import type { Capabilities, NotifiedService, Office, OrgEntity, Post } from '../types';
 import { ProposeDialog, type Proposal } from './Propose';
 
 export function RegistryPage({ nodeId, caps }: { nodeId: string; caps: Capabilities }) {
@@ -319,16 +319,19 @@ function ServicesSection({
 }) {
   const { t, locale } = useT();
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ code: '', nameEn: '', nameHi: '', departmentEn: '', departmentHi: '', slaDays: '15' });
+  const [form, setForm] = useState({ code: '', nameEn: '', nameHi: '', departmentEn: '', departmentHi: '', slaDays: '3', entityId: '' });
   const [newSla, setNewSla] = useState<Record<string, string>>({});
+  // Org directory entities (Phase 1.5): a service may optionally point at a
+  // real department/authority instead of only the free-text department fields.
+  const entities = useAsync(() => get<{ entities: OrgEntity[] }>(`/api/v1/org/entities?nodeId=${encodeURIComponent(nodeId)}`, locale), [nodeId, locale]);
 
   const create = useAction(async (e: FormEvent) => {
     e.preventDefault();
     await post('/api/v1/registry/services', {
       nodeId, code: form.code, nameEn: form.nameEn, nameHi: form.nameHi, departmentEn: form.departmentEn, departmentHi: form.departmentHi,
-      slaDays: Number(form.slaDays)
+      slaDays: Number(form.slaDays), ...(form.entityId ? { entityId: form.entityId } : {})
     });
-    setForm({ code: '', nameEn: '', nameHi: '', departmentEn: '', departmentHi: '', slaDays: '15' });
+    setForm({ code: '', nameEn: '', nameHi: '', departmentEn: '', departmentHi: '', slaDays: '3', entityId: '' });
     services.reload();
     return true;
   });
@@ -418,6 +421,16 @@ function ServicesSection({
           </Field>
           <Field label={t('slaDays')}>
             <input required type="number" min={1} max={365} value={form.slaDays} onChange={(e) => setForm({ ...form, slaDays: e.target.value })} />
+          </Field>
+          <Field label={t('linkedTo')}>
+            <select value={form.entityId} onChange={(e) => setForm({ ...form, entityId: e.target.value })}>
+              <option value="">{t('none')}</option>
+              {entities.data?.entities.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {locale === 'hi' ? e.nameHi : e.nameEn}
+                </option>
+              ))}
+            </select>
           </Field>
           <ErrorBox error={create.error} />
           <div className="row">

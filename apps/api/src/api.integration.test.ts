@@ -133,7 +133,7 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     const loginPw = randomBytes(12).toString('hex');
     for (const [suffix, group] of [
       ['platform', 'np_platform_rw'], ['iam', 'np_iam_rw'], ['audit', 'np_audit_reader'], ['relay', 'np_audit_relay'],
-      ['registry', 'np_registry_rw'], ['citizen', 'np_citizen_rw']
+      ['registry', 'np_registry_rw'], ['citizen', 'np_citizen_rw'], ['org', 'np_org_rw']
     ]) {
       await admin.query(`CREATE ROLE np_t_${suffix}_${tag} LOGIN PASSWORD '${loginPw}' IN ROLE ${group}`);
     }
@@ -160,7 +160,7 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     const cfg = loadConfig({
       NODE_ENV: 'test', LOG_LEVEL: (process.env.TEST_LOG_LEVEL as string) ?? 'fatal', PUBLIC_ORIGIN: 'http://localhost:5173', COOKIE_SECURE: 'false',
       DATABASE_URL_PLATFORM: roleUrl('platform'), DATABASE_URL_IAM: roleUrl('iam'), DATABASE_URL_AUDIT: roleUrl('audit'), DATABASE_URL_REGISTRY: roleUrl('registry'),
-      DATABASE_URL_CITIZEN: roleUrl('citizen'),
+      DATABASE_URL_CITIZEN: roleUrl('citizen'), DATABASE_URL_ORG: roleUrl('org'),
       FIELD_ENCRYPTION_KEYS: `v1:${ring.keys.get('v1')!.toString('base64')}`, FIELD_ENCRYPTION_ACTIVE_KEY: 'v1'
     });
     const log = createLogger('api-test', cfg.LOG_LEVEL);
@@ -181,7 +181,7 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     if (pools) await closePools(pools);
     await relayPool?.end();
     await admin.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
-    for (const s of ['platform', 'iam', 'audit', 'relay', 'registry', 'citizen']) await admin.query(`DROP ROLE IF EXISTS np_t_${s}_${tag}`);
+    for (const s of ['platform', 'iam', 'audit', 'relay', 'registry', 'citizen', 'org']) await admin.query(`DROP ROLE IF EXISTS np_t_${s}_${tag}`);
     await admin.end();
   });
 
@@ -441,6 +441,65 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
 
     const after = await call(dm, 'GET', '/api/v1/registry/services?nodeId=D144');
     expect(after.json().services.find((s: { id: string }) => s.id === serviceId)).toMatchObject({ slaDays: 10 });
+  });
+
+  it('manages the org directory and links a registry service to an entity', async () => {
+    const dm = await signIn('dm1');
+    const clerk = await signIn('clerk2');
+
+    const denied = await call(clerk, 'POST', '/api/v1/org/entities', { nodeId: 'D144', kind: 'DEPARTMENT', nameEn: 'Revenue Dept', nameHi: 'राजस्व विभाग' });
+    expect(denied.json().error.code).toBe('NP-POL-0001');
+
+    const unknownKind = await call(dm, 'POST', '/api/v1/org/entities', { nodeId: 'D144', kind: 'NOT_A_REAL_KIND', nameEn: 'x', nameHi: 'x' });
+    expect(unknownKind.json().error.code).toBe('NP-VAL-0001');
+
+    const dept = await call(dm, 'POST', '/api/v1/org/entities', { nodeId: 'D144', kind: 'DEPARTMENT', nameEn: 'Revenue Department', nameHi: 'राजस्व विभाग' });
+    expect(dept.statusCode, dept.body).toBe(201);
+    const deptId = dept.json().id as string;
+
+    // A child entity's node must be the parent's node or a descendant of it.
+    const child = await call(dm, 'POST', '/api/v1/org/entities', { nodeId: 'SUB_A', kind: 'SERVICE_PROVIDER', nameEn: 'Tehsil Revenue Cell', nameHi: 'तहसील राजस्व प्रभाग', parentEntityId: deptId });
+    expect(child.statusCode, child.body).toBe(201);
+
+    const list = await call(dm, 'GET', '/api/v1/org/entities?nodeId=D144');
+    expect(list.json().entities.map((e: { id: string }) => e.id)).toEqual(expect.arrayContaining([deptId, child.json().id]));
+
+    // Link a notified service to the department entity.
+    const svc = await call(dm, 'POST', '/api/v1/registry/services', {
+      nodeId: 'D144', code: 'land_mutation', nameEn: 'Land mutation', nameHi: 'भूमि म्यूटेशन',
+      departmentEn: 'Revenue', departmentHi: 'राजस्व', slaDays: 15, entityId: deptId
+    });
+    expect(svc.statusCode, svc.body).toBe(201);
+    const after = await call(dm, 'GET', '/api/v1/registry/services?nodeId=D144');
+    expect(after.json().services.find((s: { id: string }) => s.id === svc.json().id)).toMatchObject({ entityId: deptId });
+
+    // An entity that is still a parent cannot be retired.
+    expect((await call(dm, 'DELETE', `/api/v1/org/entities/${deptId}`)).json().error.code).toBe('NP-ORG-0002');
+  });
+
+  it('classifies a node (e.g. policing model) only through a Realm Governor quorum, never a direct edit', async () => {
+    const g1 = await signIn('gov1');
+    const g2 = await signIn('gov2');
+
+    const before = await call(g1, 'GET', '/api/v1/classifications?nodeId=D144');
+    const policingAxis = before.json().axes.find((a: { code: string }) => a.code === 'policingModel');
+    expect(policingAxis.current).toBeNull();
+
+    const propose = await call(g1, 'POST', '/api/v1/change-requests', {
+      nodeId: 'D144', kind: 'NODE_CLASSIFICATION_SET', payload: { axisCode: 'policingModel', valueCode: 'COMMISSIONERATE' }, reason: 'GB Nagar runs a police commissionerate'
+    });
+    expect(propose.statusCode, propose.body).toBe(201);
+    const approve = await call(g2, 'POST', `/api/v1/change-requests/${propose.json().id}/votes`, { verdict: 'APPROVE' });
+    expect(approve.json().status).toBe('APPLIED');
+
+    const after = await call(g1, 'GET', '/api/v1/classifications?nodeId=D144');
+    expect(after.json().axes.find((a: { code: string }) => a.code === 'policingModel').current).toBe('COMMISSIONERATE');
+
+    // An unknown value for a known axis is rejected before any quorum step.
+    const bad = await call(g1, 'POST', '/api/v1/change-requests', {
+      nodeId: 'D144', kind: 'NODE_CLASSIFICATION_SET', payload: { axisCode: 'policingModel', valueCode: 'NOT_A_VALUE' }, reason: 'testing an unknown classification value'
+    });
+    expect(bad.json().error.code).toBe('NP-CLASS-0002');
   });
 
   it('signs a citizen in by mobile + OTP, kept entirely separate from staff sessions', async () => {

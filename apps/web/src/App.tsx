@@ -10,6 +10,8 @@ import { DICTS, LocaleContext, useT, type TKey } from './i18n';
 import { ChangePasswordForm, LoginForm, MfaEnrollForm, MfaVerifyForm, type NextStep } from './pages/SignIn';
 import { ModulesPage } from './pages/Modules';
 import { RegistryPage } from './pages/Registry';
+import { OrgPage } from './pages/Org';
+import { ClassificationPage } from './pages/Classification';
 import { ChangesPage } from './pages/Changes';
 import { UsersPage } from './pages/Users';
 import { KillPage } from './pages/Kill';
@@ -22,6 +24,8 @@ import { getRole, type Locale } from '@np/shared';
 const TABS: { id: string; label: TKey; needs?: [string, string] }[] = [
   { id: 'modules', label: 'nav_modules', needs: ['platform.modules', 'view'] },
   { id: 'registry', label: 'nav_registry', needs: ['registry.offices', 'view'] },
+  { id: 'org', label: 'nav_org', needs: ['org.directory', 'view'] },
+  { id: 'classification', label: 'nav_classification', needs: ['platform.scope', 'view'] },
   { id: 'changes', label: 'nav_changes', needs: ['platform.change_requests', 'view'] },
   { id: 'users', label: 'nav_users', needs: ['iam.users', 'view'] },
   { id: 'kill', label: 'nav_kill', needs: ['platform.kill_switch', 'view'] },
@@ -238,6 +242,8 @@ function Shell({ session }: { session: SessionInfo }) {
           <ErrorBoundary key={`${current}:${nodeId}`} fallback={(reset) => <Crash reset={reset} />}>
             {current === 'modules' && <ModulesPage nodeId={nodeId} caps={c} />}
             {current === 'registry' && <RegistryPage nodeId={nodeId} caps={c} />}
+            {current === 'org' && <OrgPage nodeId={nodeId} caps={c} />}
+            {current === 'classification' && <ClassificationPage nodeId={nodeId} caps={c} />}
             {current === 'changes' && <ChangesPage nodeId={nodeId} caps={c} myUserId={session.user.id} />}
             {current === 'users' && <UsersPage nodeId={nodeId} nodeLevel={tree.data?.node.level ?? ''} caps={c} myUserId={session.user.id} />}
             {current === 'kill' && <KillPage nodeId={nodeId} caps={c} />}
