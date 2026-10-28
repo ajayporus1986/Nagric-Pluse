@@ -44,7 +44,8 @@ const OUTBOXES = [
   { source: 'iam', table: 'iam.audit_outbox' },
   { source: 'registry', table: 'registry.audit_outbox' },
   { source: 'citizen', table: 'citizen.audit_outbox' },
-  { source: 'org', table: 'org.audit_outbox' }
+  { source: 'org', table: 'org.audit_outbox' },
+  { source: 'intake', table: 'intake.audit_outbox' }
 ] as const;
 
 /**

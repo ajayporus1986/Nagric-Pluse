@@ -12,6 +12,7 @@ import { ModulesPage } from './pages/Modules';
 import { RegistryPage } from './pages/Registry';
 import { OrgPage } from './pages/Org';
 import { ClassificationPage } from './pages/Classification';
+import { GrievancesPage } from './pages/Grievances';
 import { ChangesPage } from './pages/Changes';
 import { UsersPage } from './pages/Users';
 import { KillPage } from './pages/Kill';
@@ -26,6 +27,7 @@ const TABS: { id: string; label: TKey; needs?: [string, string] }[] = [
   { id: 'registry', label: 'nav_registry', needs: ['registry.offices', 'view'] },
   { id: 'org', label: 'nav_org', needs: ['org.directory', 'view'] },
   { id: 'classification', label: 'nav_classification', needs: ['platform.scope', 'view'] },
+  { id: 'intake', label: 'nav_intake', needs: ['intake.grievances', 'view'] },
   { id: 'changes', label: 'nav_changes', needs: ['platform.change_requests', 'view'] },
   { id: 'users', label: 'nav_users', needs: ['iam.users', 'view'] },
   { id: 'kill', label: 'nav_kill', needs: ['platform.kill_switch', 'view'] },
@@ -244,6 +246,7 @@ function Shell({ session }: { session: SessionInfo }) {
             {current === 'registry' && <RegistryPage nodeId={nodeId} caps={c} />}
             {current === 'org' && <OrgPage nodeId={nodeId} caps={c} />}
             {current === 'classification' && <ClassificationPage nodeId={nodeId} caps={c} />}
+            {current === 'intake' && <GrievancesPage nodeId={nodeId} caps={c} />}
             {current === 'changes' && <ChangesPage nodeId={nodeId} caps={c} myUserId={session.user.id} />}
             {current === 'users' && <UsersPage nodeId={nodeId} nodeLevel={tree.data?.node.level ?? ''} caps={c} myUserId={session.user.id} />}
             {current === 'kill' && <KillPage nodeId={nodeId} caps={c} />}

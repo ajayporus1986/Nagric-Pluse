@@ -162,6 +162,58 @@ export interface ClassificationAxis {
   current: string | null;
 }
 
+export interface GrievanceListItem {
+  id: string;
+  referenceCode: string;
+  nodeId: string;
+  subject: string;
+  status: string;
+  subtype: string;
+  complainantType: string;
+  hasFriction: boolean;
+  slaDueAt: string | null;
+  createdAt: string;
+}
+
+export interface GrievanceEvent {
+  id: string;
+  fromStatus: string | null;
+  toStatus: string;
+  note: string | null;
+  actorUserId: string | null;
+  createdAt: string;
+}
+
+export interface GrievanceDepartment {
+  entityId: string;
+  isPrimary: boolean;
+  nameEn: string;
+  nameHi: string;
+}
+
+export interface GrievanceDetail {
+  id: string;
+  referenceCode: string;
+  nodeId: string;
+  serviceId: string | null;
+  entityId: string | null;
+  complainantType: string;
+  businessProfile: Record<string, unknown> | null;
+  frictionReport: { occurred: boolean; reasonCodes: string[]; otherText?: string } | null;
+  subject: string;
+  description: string;
+  locale: string;
+  status: string;
+  subtype: string;
+  slaDays: number | null;
+  slaDueAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+  departments: GrievanceDepartment[];
+  events: GrievanceEvent[];
+}
+
 export interface AuditEvent {
   seq: string;
   occurredAt: string;

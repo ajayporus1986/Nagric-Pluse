@@ -9,8 +9,9 @@
  *   np_registry   → np_registry_rw     (API registry module: offices/posts/services)
  *   np_citizen    → np_citizen_rw      (API citizen module: mobile OTP identity/sessions)
  *   np_org        → np_org_rw          (API org directory module: departments/authorities/SPVs)
+ *   np_intake     → np_intake_rw       (API grievance intake module)
  *
- * Passwords come from NP_DB_PASSWORD_PLATFORM / _IAM / _AUDIT / _RELAY / _REGISTRY / _CITIZEN / _ORG.
+ * Passwords come from NP_DB_PASSWORD_PLATFORM / _IAM / _AUDIT / _RELAY / _REGISTRY / _CITIZEN / _ORG / _INTAKE.
  * Run with MIGRATION_DATABASE_URL (schema owner) after migrations.
  */
 import pg from 'pg';
@@ -22,7 +23,8 @@ const ROLES = [
   { login: 'np_relay', group: 'np_audit_relay', env: 'NP_DB_PASSWORD_RELAY' },
   { login: 'np_registry', group: 'np_registry_rw', env: 'NP_DB_PASSWORD_REGISTRY' },
   { login: 'np_citizen', group: 'np_citizen_rw', env: 'NP_DB_PASSWORD_CITIZEN' },
-  { login: 'np_org', group: 'np_org_rw', env: 'NP_DB_PASSWORD_ORG' }
+  { login: 'np_org', group: 'np_org_rw', env: 'NP_DB_PASSWORD_ORG' },
+  { login: 'np_intake', group: 'np_intake_rw', env: 'NP_DB_PASSWORD_INTAKE' }
 ] as const;
 
 async function main(): Promise<void> {
