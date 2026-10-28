@@ -168,6 +168,7 @@ export interface GrievanceListItem {
   nodeId: string;
   subject: string;
   status: string;
+  subtype: string;
   complainantType: string;
   hasFriction: boolean;
   slaDueAt: string | null;
@@ -183,6 +184,13 @@ export interface GrievanceEvent {
   createdAt: string;
 }
 
+export interface GrievanceDepartment {
+  entityId: string;
+  isPrimary: boolean;
+  nameEn: string;
+  nameHi: string;
+}
+
 export interface GrievanceDetail {
   id: string;
   referenceCode: string;
@@ -196,11 +204,13 @@ export interface GrievanceDetail {
   description: string;
   locale: string;
   status: string;
+  subtype: string;
   slaDays: number | null;
   slaDueAt: string | null;
   createdAt: string;
   updatedAt: string;
   resolvedAt: string | null;
+  departments: GrievanceDepartment[];
   events: GrievanceEvent[];
 }
 

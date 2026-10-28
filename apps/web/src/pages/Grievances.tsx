@@ -13,6 +13,17 @@ import { useT, type TKey } from '../i18n';
 import type { Capabilities, GrievanceDetail, GrievanceListItem } from '../types';
 
 const STATUSES = ['NEW', 'ACKNOWLEDGED', 'IN_PROGRESS', 'RESOLVED', 'REJECTED', 'CLOSED'] as const;
+
+// Known seeded values of the admin-addable `grievanceSubtype` classification
+// axis; a district can add more through the Classification tab, so this is a
+// label lookup with a raw-code fallback, not a closed enum.
+const SUBTYPE_LABELS: Record<string, { en: string; hi: string }> = {
+  STANDARD: { en: 'Standard', hi: 'सामान्य' },
+  ENFORCEMENT_EVICTION: { en: 'Enforcement / eviction action', hi: 'प्रवर्तन / बेदखली कार्रवाई' }
+};
+function subtypeLabel(code: string, locale: 'en' | 'hi'): string {
+  return SUBTYPE_LABELS[code]?.[locale] ?? code;
+}
 const TRANSITIONS: Record<string, readonly string[]> = {
   NEW: ['ACKNOWLEDGED', 'REJECTED'],
   ACKNOWLEDGED: ['IN_PROGRESS', 'REJECTED'],
@@ -60,6 +71,7 @@ export function GrievancesPage({ nodeId, caps }: { nodeId: string; caps: Capabil
                 <th>{t('referenceCode')}</th>
                 <th>{t('subject')}</th>
                 <th>{t('complainantType')}</th>
+                <th>{t('grievanceSubtype')}</th>
                 <th>{t('status')}</th>
                 <th>{t('slaDue')}</th>
                 <th />
@@ -73,6 +85,7 @@ export function GrievancesPage({ nodeId, caps }: { nodeId: string; caps: Capabil
                     {g.subject} {g.hasFriction && <span className="tag warn" title={t('frictionFlag')}>⚠</span>}
                   </td>
                   <td>{t(`complainant_${g.complainantType}` as TKey)}</td>
+                  <td>{g.subtype === 'STANDARD' ? '—' : subtypeLabel(g.subtype, locale)}</td>
                   <td>{t(`status_${g.status}` as TKey)}</td>
                   <td>{g.slaDueAt ? new Date(g.slaDueAt).toLocaleDateString(locale) : '—'}</td>
                   <td className="actions">
@@ -123,6 +136,11 @@ function GrievanceDetailView({ id, canTriage, onBack, onChanged }: { id: string;
           <p>
             <strong>{t('status')}:</strong> {t(`status_${g.status}` as TKey)} &nbsp;·&nbsp;
             <strong>{t('complainantType')}:</strong> {t(`complainant_${g.complainantType}` as TKey)} &nbsp;·&nbsp;
+            {g.subtype !== 'STANDARD' && (
+              <>
+                <strong>{t('grievanceSubtype')}:</strong> {subtypeLabel(g.subtype, locale)} &nbsp;·&nbsp;
+              </>
+            )}
             <strong>{t('filedOn')}:</strong> {new Date(g.createdAt).toLocaleString(locale)}
             {g.slaDueAt && (
               <>
@@ -158,6 +176,19 @@ function GrievanceDetailView({ id, canTriage, onBack, onChanged }: { id: string;
             <div className="card narrow">
               <h3>{t('businessProfile')}</h3>
               <pre className="mono small">{JSON.stringify(g.businessProfile, null, 2)}</pre>
+            </div>
+          )}
+
+          {g.departments.length > 0 && (
+            <div className="card narrow">
+              <h3>{t('responsibleDepartments')}</h3>
+              <ul className="plain">
+                {g.departments.map((d) => (
+                  <li key={d.entityId}>
+                    {locale === 'hi' ? d.nameHi : d.nameEn} {d.isPrimary && <span className="tag">{t('primary')}</span>}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 

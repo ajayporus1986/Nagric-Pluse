@@ -631,6 +631,13 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     });
     const serviceId = svc.json().id as string;
 
+    // Two org entities, so the grievance can be routed to more than one
+    // department (single-window-style, per the business-sector research).
+    const dept1 = await call(dm, 'POST', '/api/v1/org/entities', { nodeId: 'D144', kind: 'DEPARTMENT', nameEn: 'Jal Nigam', nameHi: 'जल निगम' });
+    const dept2 = await call(dm, 'POST', '/api/v1/org/entities', { nodeId: 'D144', kind: 'TOWN_VENDING_COMMITTEE', nameEn: 'Town Vending Committee', nameHi: 'नगर विक्रय समिति' });
+    const entityId = dept1.json().id as string;
+    const extraEntityId = dept2.json().id as string;
+
     // Filing as CITIZEN without a citizen session is refused.
     const noSession = await app.inject({
       method: 'POST', url: '/api/v1/intake/grievances',
@@ -649,7 +656,8 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     const filed = await app.inject({
       method: 'POST', url: '/api/v1/intake/grievances', headers: { cookie: cCookie, 'x-csrf-token': cCsrf },
       payload: {
-        nodeId: 'D144', serviceId, subject: 'Had to pay to get a water connection', description: 'Office demanded cash before processing.',
+        nodeId: 'D144', serviceId, entityId, additionalEntityIds: [extraEntityId], subtype: 'ENFORCEMENT_EVICTION',
+        subject: 'Had to pay to get a water connection', description: 'Office demanded cash before processing.',
         complainant: {
           type: 'BUSINESS',
           businessProfile: { sectorFormality: 'MSME_REGISTERED', operatingContext: 'SHOP' },
@@ -677,14 +685,50 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     // Staff list at the district sees both grievances, with the friction flag surfaced.
     const list = await call(dm, 'GET', '/api/v1/intake/grievances?nodeId=D144');
     const row = list.json().grievances.find((r: { id: string }) => r.id === filedId);
-    expect(row).toMatchObject({ referenceCode, status: 'NEW', complainantType: 'BUSINESS', hasFriction: true });
+    expect(row).toMatchObject({ referenceCode, status: 'NEW', complainantType: 'BUSINESS', subtype: 'ENFORCEMENT_EVICTION', hasFriction: true });
 
-    // Staff detail carries the full business profile and friction report.
+    // Filtering the list by subtype only returns matching rows.
+    const bySubtype = await call(dm, 'GET', '/api/v1/intake/grievances?nodeId=D144&subtype=ENFORCEMENT_EVICTION');
+    expect(bySubtype.json().grievances.map((r: { id: string }) => r.id)).toContain(filedId);
+    const byOtherSubtype = await call(dm, 'GET', '/api/v1/intake/grievances?nodeId=D144&subtype=STANDARD');
+    expect(byOtherSubtype.json().grievances.map((r: { id: string }) => r.id)).not.toContain(filedId);
+
+    // An unknown subtype, or an unknown additional department, is refused.
+    expect(
+      (
+        await app.inject({
+          method: 'POST', url: '/api/v1/intake/grievances',
+          payload: { nodeId: 'D144', subtype: 'NOT_A_REAL_SUBTYPE', subject: 'Streetlight broken', description: 'Dark for a month.', complainant: { type: 'ANONYMOUS' } }
+        })
+      ).json().error.code
+    ).toBe('NP-INTAKE-0002');
+    expect(
+      (
+        await app.inject({
+          method: 'POST', url: '/api/v1/intake/grievances',
+          payload: {
+            nodeId: 'D144', additionalEntityIds: ['00000000-0000-0000-0000-000000000000'],
+            subject: 'Streetlight broken', description: 'Dark for a month.', complainant: { type: 'ANONYMOUS' }
+          }
+        })
+      ).json().error.code
+    ).toBe('NP-INTAKE-0002');
+
+    // Staff detail carries the full business profile, friction report, and
+    // every department named at filing time (primary flagged).
     const detail = await call(dm, 'GET', `/api/v1/intake/grievances/${filedId}`);
     expect(detail.json().frictionReport).toMatchObject({ occurred: true, reasonCodes: ['PAYMENT_CALLED_MANDATORY', 'HAD_TO_HIRE_AGENT'] });
+    expect(detail.json().subtype).toBe('ENFORCEMENT_EVICTION');
     expect(detail.json().slaDays).toBe(20);
     expect(detail.json().slaDueAt).not.toBeNull();
     expect(detail.json().events).toHaveLength(1);
+    expect(detail.json().departments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ entityId, isPrimary: true }),
+        expect.objectContaining({ entityId: extraEntityId, isPrimary: false })
+      ])
+    );
+    expect(detail.json().departments).toHaveLength(2);
 
     // An observer (view-only) may not change status.
     expect((await call(obs, 'PATCH', `/api/v1/intake/grievances/${filedId}/status`, { toStatus: 'ACKNOWLEDGED' })).json().error.code).toBe('NP-POL-0001');
