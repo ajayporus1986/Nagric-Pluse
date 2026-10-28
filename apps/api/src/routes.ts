@@ -11,6 +11,8 @@ import { registerAuditRoutes } from './audit/routes.js';
 import { registerRegistryRoutes } from './registry/routes.js';
 import { registerCitizenRoutes } from './citizen/routes.js';
 import { registerOrgRoutes } from './org/routes.js';
+import { registerIntakeRoutes } from './intake/routes.js';
+import { registerCaseRoutes } from './case/routes.js';
 
 export function registerRoutes(app: App, deps: AppDeps): void {
   registerSystemRoutes(app, deps);
@@ -21,4 +23,6 @@ export function registerRoutes(app: App, deps: AppDeps): void {
   registerRegistryRoutes(app, deps);
   registerCitizenRoutes(app, deps);
   registerOrgRoutes(app, deps);
+  registerIntakeRoutes(app, deps);
+  registerCaseRoutes(app, deps);
 }

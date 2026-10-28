@@ -126,6 +126,20 @@ export const ERRORS = {
   'NP-ORG-0002': { http: 409, level: 'warn', en: 'This cannot be removed while other records still refer to it.', hi: 'इसे हटाया नहीं जा सकता क्योंकि अन्य रिकॉर्ड अभी भी इससे जुड़े हैं।' },
   'NP-ORG-0003': { http: 400, level: 'info', en: 'A parent entity must be in the same or an ancestor node.', hi: 'मूल संस्था उसी या पूर्वज क्षेत्र में होनी चाहिए।' },
 
+  // ---- Grievance intake (INTAKE) --------------------------------------------
+  'NP-INTAKE-0001': { http: 404, level: 'info', en: 'Grievance not found.', hi: 'शिकायत नहीं मिली।' },
+  'NP-INTAKE-0002': { http: 400, level: 'info', en: 'A grievance must target a known service or organization, or state a subject on its own.', hi: 'शिकायत किसी ज्ञात सेवा या संगठन से जुड़ी होनी चाहिए, या अपना विषय स्पष्ट बताए।' },
+  'NP-INTAKE-0003': { http: 400, level: 'info', en: 'That status change is not allowed from the current status.', hi: 'वर्तमान स्थिति से यह बदलाव स्वीकार्य नहीं है।' },
+  'NP-INTAKE-0004': { http: 403, level: 'info', en: 'Grievance intake is not switched on here yet.', hi: 'शिकायत दर्ज करना अभी यहाँ सक्रिय नहीं है।' },
+  'NP-INTAKE-0005': { http: 400, level: 'info', en: 'Only an authenticated citizen may file under their own identity; use ANONYMOUS otherwise.', hi: 'केवल प्रमाणित नागरिक ही अपनी पहचान से दर्ज कर सकता है; अन्यथा गुमनाम विकल्प का उपयोग करें।' },
+
+  // ---- Case engine (CASE) ----------------------------------------------------
+  'NP-CASE-0001': { http: 404, level: 'info', en: 'Case not found.', hi: 'मामला नहीं मिला।' },
+  'NP-CASE-0002': { http: 400, level: 'info', en: 'That person cannot be assigned: no such active staff account.', hi: 'उस व्यक्ति को सौंपा नहीं जा सकता: ऐसा कोई सक्रिय कर्मचारी खाता नहीं है।' },
+  'NP-CASE-0003': { http: 409, level: 'info', en: 'This grievance is not awaiting closure confirmation.', hi: 'यह शिकायत समापन पुष्टि की प्रतीक्षा में नहीं है।' },
+  'NP-CASE-0004': { http: 403, level: 'info', en: 'Only the citizen who filed this grievance may confirm or dispute its closure.', hi: 'इस शिकायत को दर्ज करने वाला नागरिक ही इसके समापन की पुष्टि या विवाद कर सकता है।' },
+  'NP-CASE-0005': { http: 410, level: 'info', en: 'The window to confirm or dispute this closure has already passed.', hi: 'इस समापन की पुष्टि या विवाद करने की समय-सीमा समाप्त हो चुकी है।' },
+
   // ---- Citizen identity (CIT) -----------------------------------------------
   'NP-CIT-0001': { http: 403, level: 'info', en: 'Citizen self-service is not switched on here yet.', hi: 'नागरिक स्व-सेवा अभी यहाँ सक्रिय नहीं है।' },
   'NP-CIT-0002': { http: 400, level: 'info', en: 'Enter a valid 10-digit mobile number.', hi: 'एक मान्य 10 अंकों का मोबाइल नंबर दर्ज करें।' },

@@ -10,7 +10,7 @@ import pg from 'pg';
 import { z } from 'zod';
 import { createLogger } from '../core/logger.js';
 import { keyIdOf } from '../audit/checkpoint.js';
-import { cleanupCitizen, cleanupIam, expireRecords, relayAudit, signCheckpointIfDue, type SigningKey } from './jobs.js';
+import { cleanupCitizen, cleanupIam, escalateOverdueCases, expireRecords, relayAudit, signCheckpointIfDue, sweepClosureConfirmations, type SigningKey } from './jobs.js';
 
 const env = z
   .object({
@@ -21,11 +21,14 @@ const env = z
     DATABASE_URL_PLATFORM: z.string().url().optional(),
     DATABASE_URL_IAM: z.string().url().optional(),
     DATABASE_URL_CITIZEN: z.string().url().optional(),
+    DATABASE_URL_CASE: z.string().url().optional(),
     AUDIT_SIGNING_KEY_FILE: z.string().optional(),
     RELAY_INTERVAL_MS: z.coerce.number().int().min(100).default(1000),
     CHECKPOINT_TICK_MS: z.coerce.number().int().min(1000).default(30_000),
     CHECKPOINT_MIN_ROWS: z.coerce.number().int().min(1).default(1000),
-    CHECKPOINT_MAX_AGE_MS: z.coerce.number().int().min(10_000).default(300_000)
+    CHECKPOINT_MAX_AGE_MS: z.coerce.number().int().min(10_000).default(300_000),
+    CASE_SWEEP_INTERVAL_MS: z.coerce.number().int().min(10_000).max(3_600_000).default(300_000),
+    CASE_CLOSURE_CONFIRMATION_WINDOW_DAYS: z.coerce.number().int().min(1).max(60).default(7)
   })
   .parse(process.env);
 
@@ -43,7 +46,8 @@ const pools = {
   relay: new pg.Pool({ connectionString: url(env.DATABASE_URL_AUDIT_RELAY, 'DATABASE_URL_AUDIT_RELAY'), max: 2, application_name: 'np-worker-relay' }),
   platform: new pg.Pool({ connectionString: url(env.DATABASE_URL_PLATFORM, 'DATABASE_URL_PLATFORM'), max: 2, application_name: 'np-worker-platform' }),
   iam: new pg.Pool({ connectionString: url(env.DATABASE_URL_IAM, 'DATABASE_URL_IAM'), max: 2, application_name: 'np-worker-iam' }),
-  citizen: new pg.Pool({ connectionString: url(env.DATABASE_URL_CITIZEN, 'DATABASE_URL_CITIZEN'), max: 2, application_name: 'np-worker-citizen' })
+  citizen: new pg.Pool({ connectionString: url(env.DATABASE_URL_CITIZEN, 'DATABASE_URL_CITIZEN'), max: 2, application_name: 'np-worker-citizen' }),
+  case: new pg.Pool({ connectionString: url(env.DATABASE_URL_CASE, 'DATABASE_URL_CASE'), max: 2, application_name: 'np-worker-case' })
 };
 for (const [name, p] of Object.entries(pools)) p.on('error', (err) => log.error({ err, pool: name, errCode: 'NP-DB-0001' }, 'idle client error'));
 
@@ -85,7 +89,9 @@ async function main(): Promise<void> {
     every('relayAudit', env.RELAY_INTERVAL_MS, 'NP-WORK-0002', () => relayAudit(pools.relay)),
     every('expireRecords', 60_000, 'NP-WORK-0001', () => expireRecords(pools.platform)),
     every('cleanupIam', 3_600_000, 'NP-WORK-0001', () => cleanupIam(pools.iam)),
-    every('cleanupCitizen', 3_600_000, 'NP-WORK-0001', () => cleanupCitizen(pools.citizen))
+    every('cleanupCitizen', 3_600_000, 'NP-WORK-0001', () => cleanupCitizen(pools.citizen)),
+    every('escalateOverdueCases', env.CASE_SWEEP_INTERVAL_MS, 'NP-WORK-0001', () => escalateOverdueCases(pools.case)),
+    every('sweepClosureConfirmations', env.CASE_SWEEP_INTERVAL_MS, 'NP-WORK-0001', () => sweepClosureConfirmations(pools.case, env.CASE_CLOSURE_CONFIRMATION_WINDOW_DAYS))
   ];
   if (key) timers.push(every('signCheckpoint', env.CHECKPOINT_TICK_MS, 'NP-WORK-0003', () => signCheckpointIfDue(pools.relay, key, env.CHECKPOINT_MIN_ROWS, env.CHECKPOINT_MAX_AGE_MS, log)));
 

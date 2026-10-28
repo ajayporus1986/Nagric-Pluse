@@ -22,7 +22,7 @@ import { PolicyService } from './policy/service.js';
 import { registerRoutes } from './routes.js';
 import { buildKeyRing, encryptField, hashPassword, type KeyRing } from './security/crypto.js';
 import { generateTotpSecret, totpAt } from './security/totp.js';
-import { cleanupCitizen, expireRecords, relayAudit, signCheckpointIfDue } from './worker/jobs.js';
+import { cleanupCitizen, escalateOverdueCases, expireRecords, relayAudit, signCheckpointIfDue, sweepClosureConfirmations } from './worker/jobs.js';
 import { keyIdOf } from './audit/checkpoint.js';
 import type { OtpSender } from './citizen/otp-sender.js';
 
@@ -115,7 +115,7 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
   }
 
   /** Authenticated request helper. */
-  const call = (s: { cookie: string; csrf: string }, method: 'GET' | 'POST' | 'DELETE', url: string, payload?: unknown) =>
+  const call = (s: { cookie: string; csrf: string }, method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: unknown) =>
     app.inject({ method, url, headers: { cookie: s.cookie, 'x-csrf-token': s.csrf }, ...(payload !== undefined ? { payload: payload as object } : {}) });
 
   beforeAll(async () => {
@@ -133,7 +133,7 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     const loginPw = randomBytes(12).toString('hex');
     for (const [suffix, group] of [
       ['platform', 'np_platform_rw'], ['iam', 'np_iam_rw'], ['audit', 'np_audit_reader'], ['relay', 'np_audit_relay'],
-      ['registry', 'np_registry_rw'], ['citizen', 'np_citizen_rw'], ['org', 'np_org_rw']
+      ['registry', 'np_registry_rw'], ['citizen', 'np_citizen_rw'], ['org', 'np_org_rw'], ['intake', 'np_intake_rw'], ['case', 'np_case_rw']
     ]) {
       await admin.query(`CREATE ROLE np_t_${suffix}_${tag} LOGIN PASSWORD '${loginPw}' IN ROLE ${group}`);
     }
@@ -160,7 +160,7 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     const cfg = loadConfig({
       NODE_ENV: 'test', LOG_LEVEL: (process.env.TEST_LOG_LEVEL as string) ?? 'fatal', PUBLIC_ORIGIN: 'http://localhost:5173', COOKIE_SECURE: 'false',
       DATABASE_URL_PLATFORM: roleUrl('platform'), DATABASE_URL_IAM: roleUrl('iam'), DATABASE_URL_AUDIT: roleUrl('audit'), DATABASE_URL_REGISTRY: roleUrl('registry'),
-      DATABASE_URL_CITIZEN: roleUrl('citizen'), DATABASE_URL_ORG: roleUrl('org'),
+      DATABASE_URL_CITIZEN: roleUrl('citizen'), DATABASE_URL_ORG: roleUrl('org'), DATABASE_URL_INTAKE: roleUrl('intake'), DATABASE_URL_CASE: roleUrl('case'),
       FIELD_ENCRYPTION_KEYS: `v1:${ring.keys.get('v1')!.toString('base64')}`, FIELD_ENCRYPTION_ACTIVE_KEY: 'v1'
     });
     const log = createLogger('api-test', cfg.LOG_LEVEL);
@@ -181,7 +181,7 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     if (pools) await closePools(pools);
     await relayPool?.end();
     await admin.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
-    for (const s of ['platform', 'iam', 'audit', 'relay', 'registry', 'citizen', 'org']) await admin.query(`DROP ROLE IF EXISTS np_t_${s}_${tag}`);
+    for (const s of ['platform', 'iam', 'audit', 'relay', 'registry', 'citizen', 'org', 'intake', 'case']) await admin.query(`DROP ROLE IF EXISTS np_t_${s}_${tag}`);
     await admin.end();
   });
 
@@ -604,5 +604,262 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     expect((await expireRecords(pools.platform)).changeRequests).toBe(1);
     const g2 = await signIn('gov2');
     expect((await call(g2, 'POST', `/api/v1/change-requests/${p.json().id}/votes`, { verdict: 'APPROVE' })).json().error.code).toBe('NP-CR-0002');
+  });
+
+  it('files a grievance (citizen and anonymous), tracks it by reference code, and triages it through its status machine', async () => {
+    // Clear the shared per-IP login bucket: by this point in the suite, many
+    // earlier tests' signIns share app.inject's synthetic IP and could
+    // otherwise trip the 30-per-900s cap here, which would be a test-order
+    // artifact, not something this test is checking.
+    const rl = new pg.Client({ connectionString: ownerUrl });
+    await rl.connect();
+    await rl.query(`DELETE FROM iam.rate_limits WHERE bucket LIKE 'login-ip:%'`);
+    // Defensive, same spirit as the rate-limit test's own reset above: this
+    // suite shares one database and one app instance across every test in
+    // the file, so an account used by this late test is reset to a known
+    // good state rather than trusting whatever an earlier test left behind.
+    await rl.query(`UPDATE iam.users SET status = 'ACTIVE', failed_logins = 0, locked_until = NULL WHERE username IN ('dm1', 'obs1')`);
+    await rl.end();
+
+    const dm = await signIn('dm1');
+    const obs = await signIn('obs1');
+
+    // A notified service to file against, so the SLA is copied onto the grievance.
+    const svc = await call(dm, 'POST', '/api/v1/registry/services', {
+      nodeId: 'D144', code: 'water_connection', nameEn: 'New water connection', nameHi: 'नया जल संयोजन',
+      departmentEn: 'Jal Nigam', departmentHi: 'जल निगम', slaDays: 20
+    });
+    const serviceId = svc.json().id as string;
+
+    // Two org entities, so the grievance can be routed to more than one
+    // department (single-window-style, per the business-sector research).
+    const dept1 = await call(dm, 'POST', '/api/v1/org/entities', { nodeId: 'D144', kind: 'DEPARTMENT', nameEn: 'Jal Nigam', nameHi: 'जल निगम' });
+    const dept2 = await call(dm, 'POST', '/api/v1/org/entities', { nodeId: 'D144', kind: 'TOWN_VENDING_COMMITTEE', nameEn: 'Town Vending Committee', nameHi: 'नगर विक्रय समिति' });
+    const entityId = dept1.json().id as string;
+    const extraEntityId = dept2.json().id as string;
+
+    // Filing as CITIZEN without a citizen session is refused.
+    const noSession = await app.inject({
+      method: 'POST', url: '/api/v1/intake/grievances',
+      payload: { nodeId: 'D144', serviceId, subject: 'No water for 10 days', description: 'No connection despite application.', complainant: { type: 'CITIZEN' } }
+    });
+    expect(noSession.json().error.code).toBe('NP-INTAKE-0005');
+
+    // Sign a citizen in, then file a BUSINESS grievance with a friction report.
+    const mobile = '9988776655';
+    await app.inject({ method: 'POST', url: '/api/v1/citizen/otp/request', payload: { mobileNumber: mobile, nodeId: 'D144' } });
+    const otp = otpSender.sent.get('+919988776655')!;
+    const v = await app.inject({ method: 'POST', url: '/api/v1/citizen/otp/verify', payload: { mobileNumber: mobile, nodeId: 'D144', otp } });
+    const cCookie = citizenCookieOf(v);
+    const cCsrf = v.json().csrfToken as string;
+
+    const filed = await app.inject({
+      method: 'POST', url: '/api/v1/intake/grievances', headers: { cookie: cCookie, 'x-csrf-token': cCsrf },
+      payload: {
+        nodeId: 'D144', serviceId, entityId, additionalEntityIds: [extraEntityId], subtype: 'ENFORCEMENT_EVICTION',
+        subject: 'Had to pay to get a water connection', description: 'Office demanded cash before processing.',
+        complainant: {
+          type: 'BUSINESS',
+          businessProfile: { sectorFormality: 'MSME_REGISTERED', operatingContext: 'SHOP' },
+          frictionReport: { occurred: true, reasonCodes: ['PAYMENT_CALLED_MANDATORY', 'HAD_TO_HIRE_AGENT'] }
+        }
+      }
+    });
+    expect(filed.statusCode, filed.body).toBe(201);
+    const { id: filedId, referenceCode } = filed.json() as { id: string; referenceCode: string };
+    expect(referenceCode).toMatch(/^NP-D144-\d{6}$/);
+
+    // Filing anonymously needs no citizen session at all.
+    const anon = await app.inject({
+      method: 'POST', url: '/api/v1/intake/grievances',
+      payload: { nodeId: 'D144', subject: 'Streetlight broken for weeks', description: 'Outside house 12, dark since a month.', complainant: { type: 'ANONYMOUS' } }
+    });
+    expect(anon.statusCode, anon.body).toBe(201);
+
+    // The public reference-code lookup returns status only, no PII.
+    const lookup = await app.inject({ method: 'GET', url: `/api/v1/intake/grievances/lookup?referenceCode=${referenceCode}` });
+    expect(lookup.json()).toMatchObject({ referenceCode, status: 'NEW' });
+    expect(lookup.json().description).toBeUndefined();
+    expect((await app.inject({ method: 'GET', url: '/api/v1/intake/grievances/lookup?referenceCode=NP-D144-999999' })).json().error.code).toBe('NP-INTAKE-0001');
+
+    // Staff list at the district sees both grievances, with the friction flag surfaced.
+    const list = await call(dm, 'GET', '/api/v1/intake/grievances?nodeId=D144');
+    const row = list.json().grievances.find((r: { id: string }) => r.id === filedId);
+    expect(row).toMatchObject({ referenceCode, status: 'NEW', complainantType: 'BUSINESS', subtype: 'ENFORCEMENT_EVICTION', hasFriction: true });
+
+    // Filtering the list by subtype only returns matching rows.
+    const bySubtype = await call(dm, 'GET', '/api/v1/intake/grievances?nodeId=D144&subtype=ENFORCEMENT_EVICTION');
+    expect(bySubtype.json().grievances.map((r: { id: string }) => r.id)).toContain(filedId);
+    const byOtherSubtype = await call(dm, 'GET', '/api/v1/intake/grievances?nodeId=D144&subtype=STANDARD');
+    expect(byOtherSubtype.json().grievances.map((r: { id: string }) => r.id)).not.toContain(filedId);
+
+    // An unknown subtype, or an unknown additional department, is refused.
+    expect(
+      (
+        await app.inject({
+          method: 'POST', url: '/api/v1/intake/grievances',
+          payload: { nodeId: 'D144', subtype: 'NOT_A_REAL_SUBTYPE', subject: 'Streetlight broken', description: 'Dark for a month.', complainant: { type: 'ANONYMOUS' } }
+        })
+      ).json().error.code
+    ).toBe('NP-INTAKE-0002');
+    expect(
+      (
+        await app.inject({
+          method: 'POST', url: '/api/v1/intake/grievances',
+          payload: {
+            nodeId: 'D144', additionalEntityIds: ['00000000-0000-0000-0000-000000000000'],
+            subject: 'Streetlight broken', description: 'Dark for a month.', complainant: { type: 'ANONYMOUS' }
+          }
+        })
+      ).json().error.code
+    ).toBe('NP-INTAKE-0002');
+
+    // Staff detail carries the full business profile, friction report, and
+    // every department named at filing time (primary flagged).
+    const detail = await call(dm, 'GET', `/api/v1/intake/grievances/${filedId}`);
+    expect(detail.json().frictionReport).toMatchObject({ occurred: true, reasonCodes: ['PAYMENT_CALLED_MANDATORY', 'HAD_TO_HIRE_AGENT'] });
+    expect(detail.json().subtype).toBe('ENFORCEMENT_EVICTION');
+    expect(detail.json().slaDays).toBe(20);
+    expect(detail.json().slaDueAt).not.toBeNull();
+    expect(detail.json().events).toHaveLength(1);
+    expect(detail.json().departments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ entityId, isPrimary: true }),
+        expect.objectContaining({ entityId: extraEntityId, isPrimary: false })
+      ])
+    );
+    expect(detail.json().departments).toHaveLength(2);
+
+    // An observer (view-only) may not change status.
+    expect((await call(obs, 'PATCH', `/api/v1/intake/grievances/${filedId}/status`, { toStatus: 'ACKNOWLEDGED' })).json().error.code).toBe('NP-POL-0001');
+
+    // Skipping straight to RESOLVED from NEW is not a valid transition.
+    expect((await call(dm, 'PATCH', `/api/v1/intake/grievances/${filedId}/status`, { toStatus: 'RESOLVED' })).json().error.code).toBe('NP-INTAKE-0003');
+
+    // The valid path: NEW -> ACKNOWLEDGED -> IN_PROGRESS -> RESOLVED.
+    expect((await call(dm, 'PATCH', `/api/v1/intake/grievances/${filedId}/status`, { toStatus: 'ACKNOWLEDGED', note: 'assigned to Jal Nigam field office' })).statusCode).toBe(200);
+    expect((await call(dm, 'PATCH', `/api/v1/intake/grievances/${filedId}/status`, { toStatus: 'IN_PROGRESS' })).statusCode).toBe(200);
+    const resolved = await call(dm, 'PATCH', `/api/v1/intake/grievances/${filedId}/status`, { toStatus: 'RESOLVED' });
+    expect(resolved.statusCode, resolved.body).toBe(200);
+
+    const after = await call(dm, 'GET', `/api/v1/intake/grievances/${filedId}`);
+    expect(after.json().status).toBe('RESOLVED');
+    expect(after.json().resolvedAt).not.toBeNull();
+    expect(after.json().events.map((e: { toStatus: string }) => e.toStatus)).toEqual(['NEW', 'ACKNOWLEDGED', 'IN_PROGRESS', 'RESOLVED']);
+  });
+
+  it('assigns a case, escalates it past its SLA, and closes it by citizen confirmation (and by auto-close on timeout)', async () => {
+    const rl = new pg.Client({ connectionString: ownerUrl });
+    await rl.connect();
+    await rl.query(`DELETE FROM iam.rate_limits WHERE bucket LIKE 'login-ip:%'`);
+    await rl.query(`UPDATE iam.users SET status = 'ACTIVE', failed_logins = 0, locked_until = NULL WHERE username IN ('dm1', 'clerk1', 'clerk2')`);
+
+    const dm = await signIn('dm1');
+    const clerk1 = await signIn('clerk1');
+
+    // A citizen-filed civic complaint at SUB_A (a descendant of dm1's D144 post).
+    const mobile = '9123459990';
+    await app.inject({ method: 'POST', url: '/api/v1/citizen/otp/request', payload: { mobileNumber: mobile, nodeId: 'SUB_A' } });
+    const otp = otpSender.sent.get('+919123459990')!;
+    const v = await app.inject({ method: 'POST', url: '/api/v1/citizen/otp/verify', payload: { mobileNumber: mobile, nodeId: 'SUB_A', otp } });
+    const cCookie = citizenCookieOf(v);
+    const cCsrf = v.json().csrfToken as string;
+
+    const filed = await app.inject({
+      method: 'POST', url: '/api/v1/intake/grievances', headers: { cookie: cCookie, 'x-csrf-token': cCsrf },
+      payload: { nodeId: 'SUB_A', subject: 'Broken hand pump', description: 'No drinking water in the ward for a week.', complainant: { type: 'CITIZEN' } }
+    });
+    expect(filed.statusCode, filed.body).toBe(201);
+    const grievanceId = filed.json().id as string;
+
+    // dm1 (jurisdiction above SUB_A) assigns it to clerk1 (OFFICER at SUB_A).
+    const clerk1Id = ids.get('clerk1')!;
+    const assign = await call(dm, 'POST', '/api/v1/case/assignments', { grievanceId, assigneeUserId: clerk1Id });
+    expect(assign.statusCode, assign.body).toBe(201);
+
+    const history = await call(dm, 'GET', `/api/v1/case/assignments/${grievanceId}`);
+    expect(history.json().current).toBe(clerk1Id);
+    expect(history.json().history).toHaveLength(1);
+
+    // Reassigning closes the old row and opens a new one; history grows, current changes.
+    const clerk2Id = ids.get('clerk2')!;
+    expect((await call(dm, 'POST', '/api/v1/case/assignments', { grievanceId, assigneeUserId: clerk2Id })).statusCode).toBe(201);
+    const history2 = await call(dm, 'GET', `/api/v1/case/assignments/${grievanceId}`);
+    expect(history2.json().current).toBe(clerk2Id);
+    expect(history2.json().history).toHaveLength(2);
+
+    // Assigning to an unknown/inactive user is refused.
+    expect((await call(dm, 'POST', '/api/v1/case/assignments', { grievanceId, assigneeUserId: '00000000-0000-0000-0000-000000000000' })).json().error.code).toBe(
+      'NP-CASE-0002'
+    );
+
+    // clerk1 no longer holds it, so their inbox shows it only among "unassigned" -- it is not unassigned, so it shows up for no one but clerk2.
+    const clerk1Inbox = await call(clerk1, 'GET', '/api/v1/case/inbox?nodeId=SUB_A');
+    expect(clerk1Inbox.json().mine.some((g: { id: string }) => g.id === grievanceId)).toBe(false);
+
+    // Force the grievance overdue (CHECK sla_days 1..365 forbids a negative value at filing time;
+    // this directly simulates time having passed, not a malformed input).
+    await rl.query(`UPDATE intake.grievances SET sla_days = 1, sla_due_at = now() - interval '1 day' WHERE id = $1`, [grievanceId]);
+    expect(await escalateOverdueCases(pools.case)).toBe(1);
+    const afterEscalate = await call(dm, 'GET', `/api/v1/intake/grievances/${grievanceId}`);
+    // escalation bumps the level but never the status -- that is still staff's call.
+    expect(afterEscalate.json().status).toBe('NEW');
+    // Still overdue: it keeps escalating each tick, up to the default cap of 3.
+    expect(await escalateOverdueCases(pools.case)).toBe(1); // level 1 -> 2
+    expect(await escalateOverdueCases(pools.case)).toBe(1); // level 2 -> 3
+    // At the cap, a further tick does not escalate the same case again.
+    expect(await escalateOverdueCases(pools.case)).toBe(0);
+
+    // Move it to RESOLVED the ordinary way, then the closure sweep opens a confirmation window.
+    expect((await call(dm, 'PATCH', `/api/v1/intake/grievances/${grievanceId}/status`, { toStatus: 'ACKNOWLEDGED' })).statusCode).toBe(200);
+    expect((await call(dm, 'PATCH', `/api/v1/intake/grievances/${grievanceId}/status`, { toStatus: 'IN_PROGRESS' })).statusCode).toBe(200);
+    expect((await call(dm, 'PATCH', `/api/v1/intake/grievances/${grievanceId}/status`, { toStatus: 'RESOLVED' })).statusCode).toBe(200);
+    expect((await sweepClosureConfirmations(pools.case, 7)).opened).toBeGreaterThanOrEqual(1);
+
+    // Someone else's citizen session cannot confirm this grievance's closure.
+    const otherMobile = '9123459991';
+    await app.inject({ method: 'POST', url: '/api/v1/citizen/otp/request', payload: { mobileNumber: otherMobile, nodeId: 'SUB_A' } });
+    const otherOtp = otpSender.sent.get('+919123459991')!;
+    const otherV = await app.inject({ method: 'POST', url: '/api/v1/citizen/otp/verify', payload: { mobileNumber: otherMobile, nodeId: 'SUB_A', otp: otherOtp } });
+    expect(
+      (
+        await app.inject({
+          method: 'POST', url: `/api/v1/case/grievances/${grievanceId}/confirm-closure`,
+          headers: { cookie: citizenCookieOf(otherV), 'x-csrf-token': otherV.json().csrfToken as string }, payload: { confirmed: true }
+        })
+      ).json().error.code
+    ).toBe('NP-CASE-0004');
+
+    // The citizen who actually filed it disputes the resolution: reopens to IN_PROGRESS, escalation bumps.
+    const dispute = await app.inject({
+      method: 'POST', url: `/api/v1/case/grievances/${grievanceId}/confirm-closure`,
+      headers: { cookie: cCookie, 'x-csrf-token': cCsrf }, payload: { confirmed: false, note: 'Pump is still broken.' }
+    });
+    expect(dispute.statusCode, dispute.body).toBe(200);
+    const afterDispute = await call(dm, 'GET', `/api/v1/intake/grievances/${grievanceId}`);
+    expect(afterDispute.json().status).toBe('IN_PROGRESS');
+    expect(afterDispute.json().events.at(-1)).toMatchObject({ fromStatus: 'RESOLVED', toStatus: 'IN_PROGRESS', note: 'Pump is still broken.' });
+
+    // Resolve again, let the confirmation window lapse this time, and the sweep auto-closes it.
+    expect((await call(dm, 'PATCH', `/api/v1/intake/grievances/${grievanceId}/status`, { toStatus: 'RESOLVED' })).statusCode).toBe(200);
+    await sweepClosureConfirmations(pools.case, 7);
+    await rl.query(`UPDATE "case".closure_confirmations SET window_expires_at = now() - interval '1 day' WHERE grievance_id = $1`, [grievanceId]);
+    const swept = await sweepClosureConfirmations(pools.case, 7);
+    expect(swept.autoClosed).toBe(1);
+    const finalState = await call(dm, 'GET', `/api/v1/intake/grievances/${grievanceId}`);
+    expect(finalState.json().status).toBe('CLOSED');
+    expect(finalState.json().events.at(-1)).toMatchObject({ fromStatus: 'RESOLVED', toStatus: 'CLOSED', note: 'Auto-closed: no citizen response within the confirmation window' });
+
+    // Confirming a grievance that is not RESOLVED (it is CLOSED now) is refused.
+    expect(
+      (
+        await app.inject({
+          method: 'POST', url: `/api/v1/case/grievances/${grievanceId}/confirm-closure`,
+          headers: { cookie: cCookie, 'x-csrf-token': cCsrf }, payload: { confirmed: true }
+        })
+      ).json().error.code
+    ).toBe('NP-CASE-0003');
+
+    await rl.end();
   });
 });
