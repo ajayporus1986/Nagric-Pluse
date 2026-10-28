@@ -22,7 +22,7 @@ import { PolicyService } from './policy/service.js';
 import { registerRoutes } from './routes.js';
 import { buildKeyRing, encryptField, hashPassword, type KeyRing } from './security/crypto.js';
 import { generateTotpSecret, totpAt } from './security/totp.js';
-import { cleanupCitizen, expireRecords, relayAudit, signCheckpointIfDue } from './worker/jobs.js';
+import { cleanupCitizen, escalateOverdueCases, expireRecords, relayAudit, signCheckpointIfDue, sweepClosureConfirmations } from './worker/jobs.js';
 import { keyIdOf } from './audit/checkpoint.js';
 import type { OtpSender } from './citizen/otp-sender.js';
 
@@ -133,7 +133,7 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     const loginPw = randomBytes(12).toString('hex');
     for (const [suffix, group] of [
       ['platform', 'np_platform_rw'], ['iam', 'np_iam_rw'], ['audit', 'np_audit_reader'], ['relay', 'np_audit_relay'],
-      ['registry', 'np_registry_rw'], ['citizen', 'np_citizen_rw'], ['org', 'np_org_rw'], ['intake', 'np_intake_rw']
+      ['registry', 'np_registry_rw'], ['citizen', 'np_citizen_rw'], ['org', 'np_org_rw'], ['intake', 'np_intake_rw'], ['case', 'np_case_rw']
     ]) {
       await admin.query(`CREATE ROLE np_t_${suffix}_${tag} LOGIN PASSWORD '${loginPw}' IN ROLE ${group}`);
     }
@@ -160,7 +160,7 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     const cfg = loadConfig({
       NODE_ENV: 'test', LOG_LEVEL: (process.env.TEST_LOG_LEVEL as string) ?? 'fatal', PUBLIC_ORIGIN: 'http://localhost:5173', COOKIE_SECURE: 'false',
       DATABASE_URL_PLATFORM: roleUrl('platform'), DATABASE_URL_IAM: roleUrl('iam'), DATABASE_URL_AUDIT: roleUrl('audit'), DATABASE_URL_REGISTRY: roleUrl('registry'),
-      DATABASE_URL_CITIZEN: roleUrl('citizen'), DATABASE_URL_ORG: roleUrl('org'), DATABASE_URL_INTAKE: roleUrl('intake'),
+      DATABASE_URL_CITIZEN: roleUrl('citizen'), DATABASE_URL_ORG: roleUrl('org'), DATABASE_URL_INTAKE: roleUrl('intake'), DATABASE_URL_CASE: roleUrl('case'),
       FIELD_ENCRYPTION_KEYS: `v1:${ring.keys.get('v1')!.toString('base64')}`, FIELD_ENCRYPTION_ACTIVE_KEY: 'v1'
     });
     const log = createLogger('api-test', cfg.LOG_LEVEL);
@@ -181,7 +181,7 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     if (pools) await closePools(pools);
     await relayPool?.end();
     await admin.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
-    for (const s of ['platform', 'iam', 'audit', 'relay', 'registry', 'citizen', 'org', 'intake']) await admin.query(`DROP ROLE IF EXISTS np_t_${s}_${tag}`);
+    for (const s of ['platform', 'iam', 'audit', 'relay', 'registry', 'citizen', 'org', 'intake', 'case']) await admin.query(`DROP ROLE IF EXISTS np_t_${s}_${tag}`);
     await admin.end();
   });
 
@@ -746,5 +746,120 @@ describe.skipIf(!ADMIN_URL)('API (integration)', () => {
     expect(after.json().status).toBe('RESOLVED');
     expect(after.json().resolvedAt).not.toBeNull();
     expect(after.json().events.map((e: { toStatus: string }) => e.toStatus)).toEqual(['NEW', 'ACKNOWLEDGED', 'IN_PROGRESS', 'RESOLVED']);
+  });
+
+  it('assigns a case, escalates it past its SLA, and closes it by citizen confirmation (and by auto-close on timeout)', async () => {
+    const rl = new pg.Client({ connectionString: ownerUrl });
+    await rl.connect();
+    await rl.query(`DELETE FROM iam.rate_limits WHERE bucket LIKE 'login-ip:%'`);
+    await rl.query(`UPDATE iam.users SET status = 'ACTIVE', failed_logins = 0, locked_until = NULL WHERE username IN ('dm1', 'clerk1', 'clerk2')`);
+
+    const dm = await signIn('dm1');
+    const clerk1 = await signIn('clerk1');
+
+    // A citizen-filed civic complaint at SUB_A (a descendant of dm1's D144 post).
+    const mobile = '9123459990';
+    await app.inject({ method: 'POST', url: '/api/v1/citizen/otp/request', payload: { mobileNumber: mobile, nodeId: 'SUB_A' } });
+    const otp = otpSender.sent.get('+919123459990')!;
+    const v = await app.inject({ method: 'POST', url: '/api/v1/citizen/otp/verify', payload: { mobileNumber: mobile, nodeId: 'SUB_A', otp } });
+    const cCookie = citizenCookieOf(v);
+    const cCsrf = v.json().csrfToken as string;
+
+    const filed = await app.inject({
+      method: 'POST', url: '/api/v1/intake/grievances', headers: { cookie: cCookie, 'x-csrf-token': cCsrf },
+      payload: { nodeId: 'SUB_A', subject: 'Broken hand pump', description: 'No drinking water in the ward for a week.', complainant: { type: 'CITIZEN' } }
+    });
+    expect(filed.statusCode, filed.body).toBe(201);
+    const grievanceId = filed.json().id as string;
+
+    // dm1 (jurisdiction above SUB_A) assigns it to clerk1 (OFFICER at SUB_A).
+    const clerk1Id = ids.get('clerk1')!;
+    const assign = await call(dm, 'POST', '/api/v1/case/assignments', { grievanceId, assigneeUserId: clerk1Id });
+    expect(assign.statusCode, assign.body).toBe(201);
+
+    const history = await call(dm, 'GET', `/api/v1/case/assignments/${grievanceId}`);
+    expect(history.json().current).toBe(clerk1Id);
+    expect(history.json().history).toHaveLength(1);
+
+    // Reassigning closes the old row and opens a new one; history grows, current changes.
+    const clerk2Id = ids.get('clerk2')!;
+    expect((await call(dm, 'POST', '/api/v1/case/assignments', { grievanceId, assigneeUserId: clerk2Id })).statusCode).toBe(201);
+    const history2 = await call(dm, 'GET', `/api/v1/case/assignments/${grievanceId}`);
+    expect(history2.json().current).toBe(clerk2Id);
+    expect(history2.json().history).toHaveLength(2);
+
+    // Assigning to an unknown/inactive user is refused.
+    expect((await call(dm, 'POST', '/api/v1/case/assignments', { grievanceId, assigneeUserId: '00000000-0000-0000-0000-000000000000' })).json().error.code).toBe(
+      'NP-CASE-0002'
+    );
+
+    // clerk1 no longer holds it, so their inbox shows it only among "unassigned" -- it is not unassigned, so it shows up for no one but clerk2.
+    const clerk1Inbox = await call(clerk1, 'GET', '/api/v1/case/inbox?nodeId=SUB_A');
+    expect(clerk1Inbox.json().mine.some((g: { id: string }) => g.id === grievanceId)).toBe(false);
+
+    // Force the grievance overdue (CHECK sla_days 1..365 forbids a negative value at filing time;
+    // this directly simulates time having passed, not a malformed input).
+    await rl.query(`UPDATE intake.grievances SET sla_days = 1, sla_due_at = now() - interval '1 day' WHERE id = $1`, [grievanceId]);
+    expect(await escalateOverdueCases(pools.case)).toBe(1);
+    const afterEscalate = await call(dm, 'GET', `/api/v1/intake/grievances/${grievanceId}`);
+    // escalation bumps the level but never the status -- that is still staff's call.
+    expect(afterEscalate.json().status).toBe('NEW');
+    // Still overdue: it keeps escalating each tick, up to the default cap of 3.
+    expect(await escalateOverdueCases(pools.case)).toBe(1); // level 1 -> 2
+    expect(await escalateOverdueCases(pools.case)).toBe(1); // level 2 -> 3
+    // At the cap, a further tick does not escalate the same case again.
+    expect(await escalateOverdueCases(pools.case)).toBe(0);
+
+    // Move it to RESOLVED the ordinary way, then the closure sweep opens a confirmation window.
+    expect((await call(dm, 'PATCH', `/api/v1/intake/grievances/${grievanceId}/status`, { toStatus: 'ACKNOWLEDGED' })).statusCode).toBe(200);
+    expect((await call(dm, 'PATCH', `/api/v1/intake/grievances/${grievanceId}/status`, { toStatus: 'IN_PROGRESS' })).statusCode).toBe(200);
+    expect((await call(dm, 'PATCH', `/api/v1/intake/grievances/${grievanceId}/status`, { toStatus: 'RESOLVED' })).statusCode).toBe(200);
+    expect((await sweepClosureConfirmations(pools.case, 7)).opened).toBeGreaterThanOrEqual(1);
+
+    // Someone else's citizen session cannot confirm this grievance's closure.
+    const otherMobile = '9123459991';
+    await app.inject({ method: 'POST', url: '/api/v1/citizen/otp/request', payload: { mobileNumber: otherMobile, nodeId: 'SUB_A' } });
+    const otherOtp = otpSender.sent.get('+919123459991')!;
+    const otherV = await app.inject({ method: 'POST', url: '/api/v1/citizen/otp/verify', payload: { mobileNumber: otherMobile, nodeId: 'SUB_A', otp: otherOtp } });
+    expect(
+      (
+        await app.inject({
+          method: 'POST', url: `/api/v1/case/grievances/${grievanceId}/confirm-closure`,
+          headers: { cookie: citizenCookieOf(otherV), 'x-csrf-token': otherV.json().csrfToken as string }, payload: { confirmed: true }
+        })
+      ).json().error.code
+    ).toBe('NP-CASE-0004');
+
+    // The citizen who actually filed it disputes the resolution: reopens to IN_PROGRESS, escalation bumps.
+    const dispute = await app.inject({
+      method: 'POST', url: `/api/v1/case/grievances/${grievanceId}/confirm-closure`,
+      headers: { cookie: cCookie, 'x-csrf-token': cCsrf }, payload: { confirmed: false, note: 'Pump is still broken.' }
+    });
+    expect(dispute.statusCode, dispute.body).toBe(200);
+    const afterDispute = await call(dm, 'GET', `/api/v1/intake/grievances/${grievanceId}`);
+    expect(afterDispute.json().status).toBe('IN_PROGRESS');
+    expect(afterDispute.json().events.at(-1)).toMatchObject({ fromStatus: 'RESOLVED', toStatus: 'IN_PROGRESS', note: 'Pump is still broken.' });
+
+    // Resolve again, let the confirmation window lapse this time, and the sweep auto-closes it.
+    expect((await call(dm, 'PATCH', `/api/v1/intake/grievances/${grievanceId}/status`, { toStatus: 'RESOLVED' })).statusCode).toBe(200);
+    await sweepClosureConfirmations(pools.case, 7);
+    await rl.query(`UPDATE "case".closure_confirmations SET window_expires_at = now() - interval '1 day' WHERE grievance_id = $1`, [grievanceId]);
+    const swept = await sweepClosureConfirmations(pools.case, 7);
+    expect(swept.autoClosed).toBe(1);
+    const finalState = await call(dm, 'GET', `/api/v1/intake/grievances/${grievanceId}`);
+    expect(finalState.json().status).toBe('CLOSED');
+    expect(finalState.json().events.at(-1)).toMatchObject({ fromStatus: 'RESOLVED', toStatus: 'CLOSED', note: 'Auto-closed: no citizen response within the confirmation window' });
+
+    // Confirming a grievance that is not RESOLVED (it is CLOSED now) is refused.
+    expect(
+      (
+        await app.inject({
+          method: 'POST', url: `/api/v1/case/grievances/${grievanceId}/confirm-closure`,
+          headers: { cookie: cCookie, 'x-csrf-token': cCsrf }, payload: { confirmed: true }
+        })
+      ).json().error.code
+    ).toBe('NP-CASE-0003');
+
+    await rl.end();
   });
 });

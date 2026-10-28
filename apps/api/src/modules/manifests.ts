@@ -229,6 +229,49 @@ const RAW: unknown[] = [
         }
       }
     ]
+  },
+  {
+    id: 'case',
+    version: '0.1.0',
+    name: { en: 'Case engine', hi: 'मामला प्रणाली' },
+    realm: 'GOVERNMENT',
+    requires: ['platform', 'iam', 'intake'],
+    features: [
+      {
+        code: 'case.assignments',
+        name: { en: 'Assign cases to staff', hi: 'मामले कर्मचारियों को सौंपें' },
+        actions: ['view', 'update'],
+        auditedActions: ['update'],
+        defaultGrants: {
+          ...ALL_STAFF_VIEW,
+          ASSISTED_AGENT: ['view', 'update'],
+          OFFICER: ['view', 'update'],
+          OFFICE_HEAD: ['view', 'update'],
+          DEPARTMENT_HEAD: ['view', 'update'],
+          DISTRICT_MAGISTRATE: ['view', 'update'],
+          AUTHORITY_CEO: ['view', 'update']
+        }
+      },
+      {
+        // The officer's own work queue: cases assigned to them, plus
+        // unassigned cases in their office. Any role that can be assigned a
+        // case needs to see this; view-only roles (department head and up)
+        // see it too, for the same oversight reason they see the grievance list.
+        code: 'case.inbox',
+        name: { en: 'Responder inbox', hi: 'उत्तरदायी इनबॉक्स' },
+        actions: ['view'],
+        auditedActions: [],
+        defaultGrants: {
+          ...ALL_STAFF_VIEW,
+          ASSISTED_AGENT: ['view'],
+          OFFICER: ['view'],
+          OFFICE_HEAD: ['view'],
+          DEPARTMENT_HEAD: ['view'],
+          DISTRICT_MAGISTRATE: ['view'],
+          AUTHORITY_CEO: ['view']
+        }
+      }
+    ]
   }
 ];
 

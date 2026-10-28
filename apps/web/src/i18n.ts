@@ -213,7 +213,26 @@ const en = {
   status_CLOSED: 'Closed',
   complainant_CITIZEN: 'Citizen',
   complainant_BUSINESS: 'Business',
-  complainant_ANONYMOUS: 'Anonymous'
+  complainant_ANONYMOUS: 'Anonymous',
+  // Case engine / responder inbox
+  nav_case: 'Responder inbox',
+  caseInboxTitle: 'Responder inbox',
+  caseInboxIntro: 'Grievances assigned to you, and unassigned grievances in this area, sorted by escalation and due date.',
+  caseMine: 'Assigned to me',
+  caseUnassigned: 'Unassigned',
+  caseNoneMine: 'Nothing assigned to you here.',
+  caseNoneUnassigned: 'Nothing unassigned here.',
+  escalationLevel: 'Escalation',
+  assignToMe: 'Assign to me',
+  reassign: 'Reassign',
+  assigneeLabel: 'Assignee',
+  assignedTo: 'Assigned to',
+  unassignedLabel: 'Unassigned',
+  currentAssignment: 'Current assignment',
+  assignmentHistory: 'Assignment history',
+  chooseAssignee: 'Staff user id',
+  assign: 'Assign',
+  unassignedAtLabel: 'Unassigned at'
 };
 
 type Dict = typeof en;
@@ -412,7 +431,26 @@ const hi: Dict = {
   status_CLOSED: 'बंद',
   complainant_CITIZEN: 'नागरिक',
   complainant_BUSINESS: 'व्यवसाय',
-  complainant_ANONYMOUS: 'गुमनाम'
+  complainant_ANONYMOUS: 'गुमनाम',
+  // Case engine / responder inbox
+  nav_case: 'रिस्पॉन्डर इनबॉक्स',
+  caseInboxTitle: 'रिस्पॉन्डर इनबॉक्स',
+  caseInboxIntro: 'आपको सौंपी गई शिकायतें, और इस क्षेत्र में असाइन न की गई शिकायतें, प्राथमिकता और नियत तिथि के क्रम में।',
+  caseMine: 'मुझे सौंपी गई',
+  caseUnassigned: 'असाइन नहीं हुई',
+  caseNoneMine: 'यहाँ आपको कुछ भी नहीं सौंपा गया है।',
+  caseNoneUnassigned: 'यहाँ कुछ भी असाइन नहीं है।',
+  escalationLevel: 'अपग्रेडेशन स्तर',
+  assignToMe: 'मुझे सौंपें',
+  reassign: 'पुनः सौंपें',
+  assigneeLabel: 'सौंपा गया',
+  assignedTo: 'सौंपा गया',
+  unassignedLabel: 'असाइन नहीं',
+  currentAssignment: 'वर्तमान असाइनमेंट',
+  assignmentHistory: 'असाइनमेंट इतिहास',
+  chooseAssignee: 'स्टाफ़ उपयोगकर्ता आईडी',
+  assign: 'सौंपें',
+  unassignedAtLabel: 'असाइनमेंट समाप्त'
 };
 
 export const DICTS: Record<Locale, Dict> = { en, hi };

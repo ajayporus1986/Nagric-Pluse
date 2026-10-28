@@ -214,6 +214,36 @@ export interface GrievanceDetail {
   events: GrievanceEvent[];
 }
 
+export interface CaseInboxItem {
+  id: string;
+  referenceCode: string;
+  nodeId: string;
+  subject: string;
+  status: string;
+  escalationLevel: number;
+  slaDueAt: string | null;
+  createdAt: string;
+}
+
+export interface CaseInbox {
+  mine: CaseInboxItem[];
+  unassigned: CaseInboxItem[];
+}
+
+export interface CaseAssignmentHistoryItem {
+  id: string;
+  assigneeUserId: string;
+  assigneeName: string;
+  assignedBy: string;
+  assignedAt: string;
+  unassignedAt: string | null;
+}
+
+export interface CaseAssignment {
+  history: CaseAssignmentHistoryItem[];
+  current: string | null;
+}
+
 export interface AuditEvent {
   seq: string;
   occurredAt: string;

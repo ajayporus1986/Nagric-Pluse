@@ -6,8 +6,8 @@
 | --- | --- | --- |
 | `db` | `postgres:16` | — |
 | `migrate` (one-shot) | `api` image, `migrate.js` then `db-roles.js` | db as schema owner |
-| `api` | `api` image, `dist/server.js` | db as `np_platform`, `np_iam`, `np_audit`, `np_registry`, `np_citizen`, `np_org`, `np_intake` |
-| `worker` | `api` image, `dist/worker/main.js` | db as `np_relay`, `np_platform`, `np_iam`, `np_citizen`, `np_org`, `np_intake` |
+| `api` | `api` image, `dist/server.js` | db as `np_platform`, `np_iam`, `np_audit`, `np_registry`, `np_citizen`, `np_org`, `np_intake`, `np_case` |
+| `worker` | `api` image, `dist/worker/main.js` | db as `np_relay`, `np_platform`, `np_iam`, `np_citizen`, `np_org`, `np_intake`, `np_case` |
 | `web` | nginx serving the console, proxying `/api` | api |
 
 The API is stateless: run as many replicas as needed behind the web tier. Sessions, rate limits and policy live in Postgres; replicas pick up policy changes within about 100 ms through `LISTEN/NOTIFY`.
@@ -48,8 +48,18 @@ Migrations create NOLOGIN group roles with least-privilege grants. `db-roles.js`
 | `np_citizen` | `np_citizen_rw` | citizen identity, OTP challenges, citizen sessions and rate limits — never touches `iam.*`, `registry.*` or any staff table |
 | `np_org` | `np_org_rw` | the org directory (`org.entities`): departments, statutory authorities, SPVs, SEZ offices and other service providers that `registry.services` and future modules reference |
 | `np_intake` | `np_intake_rw` | grievance intake (`intake.grievances`, `intake.grievance_events`, `intake.grievance_departments`): citizen/business/anonymous filings, their status history, every department named at filing time (single-window routing), and a read-only lookup into `registry.services`, `org.entities` and `citizen.citizens` needed at filing time |
+| `np_case` | `np_case_rw` | case engine (`"case".assignments`, `"case".sla_escalations`, `"case".closure_confirmations`): staff assignment and history, SLA-breach escalation and citizen closure confirmation, plus narrow column-scoped writes into `intake.grievances` (`status`, `resolved_at`, `updated_at`, `escalation_level`) and inserts into `intake.grievance_events` for exactly those automated transitions, and a read-only status check into `iam.users` (`id`, `display_name`, `status` only) when assigning a case |
 
 No service role can UPDATE or DELETE the audit ledger; triggers refuse it even for the owner.
+
+## Worker jobs
+
+In addition to the audit-outbox relay (per module, draining `*.audit_outbox` into the ledger) and the SLA-due-date sweep from intake, the case engine adds two scheduled jobs:
+
+| Job | Interval | Does |
+| --- | --- | --- |
+| `escalateOverdueCases` | `CASE_SWEEP_INTERVAL_MS` (default 5 min) | Bumps `intake.grievances.escalation_level` by 1 for every open grievance past its `sla_due_at`, up to a cap (default 3), logging each step to `"case".sla_escalations`. Re-escalates every tick while a case remains open and overdue, until the cap. |
+| `sweepClosureConfirmations` | same tick as above | Opens a confirmation window (`"case".closure_confirmations`) for every grievance that just turned `RESOLVED`, and auto-closes (`RESOLVED` → `CLOSED`) any window that lapsed with no citizen response after `CASE_CLOSURE_CONFIRMATION_WINDOW_DAYS` (default 7). |
 
 ## Logs and debugging
 

@@ -10,7 +10,7 @@ import type { Decision } from '@np/shared';
 import { AppError } from '../core/errors.js';
 
 /** Schemas that own an audit_outbox table. */
-export type OutboxSchema = 'platform' | 'iam' | 'registry' | 'citizen' | 'org' | 'intake';
+export type OutboxSchema = 'platform' | 'iam' | 'registry' | 'citizen' | 'org' | 'intake' | 'case';
 
 /** One audit event. Never put secrets or raw personal data in `detail`. */
 export interface AuditEvent {
@@ -38,6 +38,7 @@ export async function writeAudit(client: pg.PoolClient, schema: OutboxSchema, ev
     : schema === 'registry' ? 'registry.audit_outbox'
     : schema === 'org' ? 'org.audit_outbox'
     : schema === 'intake' ? 'intake.audit_outbox'
+    : schema === 'case' ? '"case".audit_outbox' // "case" is a reserved SQL keyword and must stay quoted
     : 'citizen.audit_outbox';
   try {
     await client.query(

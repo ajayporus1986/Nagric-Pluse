@@ -3,11 +3,13 @@
  * it takes a transaction-scoped advisory lock and simply skips the tick if
  * another replica holds it.
  *
- *   relayAudit        outbox rows → audit.ledger (in order), then deletes them
- *   signCheckpoint    Ed25519-signs the latest ledger hash periodically
- *   expireRecords     expires stale change requests and kill switches
- *   cleanupIam        deletes long-expired sessions and old rate-limit windows
- *   cleanupCitizen    same, for citizen sessions, rate limits and spent OTP challenges
+ *   relayAudit                  outbox rows → audit.ledger (in order), then deletes them
+ *   signCheckpoint               Ed25519-signs the latest ledger hash periodically
+ *   expireRecords                expires stale change requests and kill switches
+ *   cleanupIam                   deletes long-expired sessions and old rate-limit windows
+ *   cleanupCitizen                same, for citizen sessions, rate limits and spent OTP challenges
+ *   escalateOverdueCases         case engine: bumps escalation_level on open grievances past their SLA
+ *   sweepClosureConfirmations    case engine: opens the citizen confirmation window on RESOLVED grievances, auto-closes lapsed ones
  */
 import type { KeyObject } from 'node:crypto';
 import type pg from 'pg';
@@ -15,7 +17,10 @@ import type { Logger } from 'pino';
 import { signCheckpoint } from '../audit/checkpoint.js';
 
 /** Advisory lock keys (arbitrary constants, one per job). */
-const LOCK = { relay: 7_310_001, checkpoint: 7_310_002, expire: 7_310_003, cleanup: 7_310_004, cleanupCitizen: 7_310_005 };
+const LOCK = {
+  relay: 7_310_001, checkpoint: 7_310_002, expire: 7_310_003, cleanup: 7_310_004, cleanupCitizen: 7_310_005,
+  caseEscalate: 7_310_006, caseClosure: 7_310_007
+};
 
 /** Runs `fn` in a READ COMMITTED transaction if the advisory lock is free; returns undefined if skipped. */
 async function exclusive<T>(pool: pg.Pool, lockKey: number, fn: (c: pg.PoolClient) => Promise<T>): Promise<T | undefined> {
@@ -45,7 +50,8 @@ const OUTBOXES = [
   { source: 'registry', table: 'registry.audit_outbox' },
   { source: 'citizen', table: 'citizen.audit_outbox' },
   { source: 'org', table: 'org.audit_outbox' },
-  { source: 'intake', table: 'intake.audit_outbox' }
+  { source: 'intake', table: 'intake.audit_outbox' },
+  { source: 'case', table: '"case".audit_outbox' }
 ] as const;
 
 /**
@@ -154,4 +160,73 @@ export async function cleanupCitizen(citizenPool: pg.Pool): Promise<{ sessions: 
     return { sessions: s.rowCount ?? 0, rateLimits: rl.rowCount ?? 0, otpChallenges: otp.rowCount ?? 0 };
   });
   return r ?? { sessions: 0, rateLimits: 0, otpChallenges: 0 };
+}
+
+/**
+ * Case engine: bumps escalation_level on grievances still open (NEW,
+ * ACKNOWLEDGED or IN_PROGRESS) past their sla_due_at, once per tick per
+ * grievance, up to `maxLevel`, and records the step in "case".sla_escalations.
+ * Capped at maxLevel so a permanently-stuck case does not escalate forever;
+ * a human (responder inbox, sorted by escalation_level) takes it from there.
+ */
+export async function escalateOverdueCases(casePool: pg.Pool, maxLevel = 3): Promise<number> {
+  const n = await exclusive(casePool, LOCK.caseEscalate, async (c) => {
+    const due = await c.query<{ id: string; escalation_level: number }>(
+      `SELECT id, escalation_level FROM intake.grievances
+         WHERE status IN ('NEW','ACKNOWLEDGED','IN_PROGRESS') AND sla_due_at IS NOT NULL AND sla_due_at < now() AND escalation_level < $1
+         ORDER BY sla_due_at LIMIT 500`,
+      [maxLevel]
+    );
+    for (const row of due.rows) {
+      const toLevel = row.escalation_level + 1;
+      await c.query('UPDATE intake.grievances SET escalation_level = $2, updated_at = now() WHERE id = $1', [row.id, toLevel]);
+      await c.query('INSERT INTO "case".sla_escalations (grievance_id, from_level, to_level) VALUES ($1,$2,$3)', [row.id, row.escalation_level, toLevel]);
+    }
+    return due.rowCount ?? 0;
+  });
+  return n ?? 0;
+}
+
+/**
+ * Case engine: (1) opens a closure-confirmation window on every RESOLVED
+ * grievance filed by an identified citizen, and (2) auto-closes any window
+ * that lapsed with no citizen response -- exactly the RESOLVED -> CLOSED
+ * transition a citizen's own confirmation would have made, just
+ * system-initiated (actor_user_id NULL, same convention as intake's initial
+ * 'filed' event). An anonymous/business grievance with no citizen_id never
+ * gets a window and simply stays RESOLVED until staff close it manually --
+ * there is no one to ask.
+ *
+ * A grievance can cycle through RESOLVED more than once (a dispute reopens
+ * it to IN_PROGRESS, and it can be resolved again), so this is an upsert:
+ * a still-open window (confirmed IS NULL) is left alone, but a RESOLVED
+ * grievance whose previous window already concluded (confirmed IS NOT
+ * NULL, from an earlier cycle) gets a fresh window for the new cycle.
+ */
+export async function sweepClosureConfirmations(casePool: pg.Pool, windowDays: number): Promise<{ opened: number; autoClosed: number }> {
+  const r = await exclusive(casePool, LOCK.caseClosure, async (c) => {
+    const opened = await c.query(
+      `INSERT INTO "case".closure_confirmations (grievance_id, window_expires_at)
+         SELECT g.id, now() + make_interval(days => $1) FROM intake.grievances g
+         WHERE g.status = 'RESOLVED' AND g.citizen_id IS NOT NULL
+       ON CONFLICT (grievance_id) DO UPDATE SET
+         window_expires_at = excluded.window_expires_at, confirmed = NULL, confirmed_at = NULL, dispute_note = NULL, auto_closed = false
+       WHERE "case".closure_confirmations.confirmed IS NOT NULL`,
+      [windowDays]
+    );
+    const due = await c.query<{ grievance_id: string }>(
+      `SELECT cc.grievance_id FROM "case".closure_confirmations cc
+         JOIN intake.grievances g ON g.id = cc.grievance_id
+         WHERE cc.confirmed IS NULL AND cc.window_expires_at < now() AND g.status = 'RESOLVED'`
+    );
+    for (const row of due.rows) {
+      await c.query(`UPDATE intake.grievances SET status = 'CLOSED', updated_at = now() WHERE id = $1`, [row.grievance_id]);
+      await c.query(`INSERT INTO intake.grievance_events (grievance_id, from_status, to_status, note) VALUES ($1,'RESOLVED','CLOSED',$2)`, [
+        row.grievance_id, 'Auto-closed: no citizen response within the confirmation window'
+      ]);
+      await c.query(`UPDATE "case".closure_confirmations SET confirmed = true, confirmed_at = now(), auto_closed = true WHERE grievance_id = $1`, [row.grievance_id]);
+    }
+    return { opened: opened.rowCount ?? 0, autoClosed: due.rowCount ?? 0 };
+  });
+  return r ?? { opened: 0, autoClosed: 0 };
 }
