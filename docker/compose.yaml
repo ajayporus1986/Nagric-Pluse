@@ -24,6 +24,7 @@ x-db-urls: &db-urls
   DATABASE_URL_AUDIT: postgres://np_audit:${NP_DB_PASSWORD_AUDIT:?}@db:5432/nagrik_pulse
   DATABASE_URL_AUDIT_RELAY: postgres://np_relay:${NP_DB_PASSWORD_RELAY:?}@db:5432/nagrik_pulse
   DATABASE_URL_REGISTRY: postgres://np_registry:${NP_DB_PASSWORD_REGISTRY:?}@db:5432/nagrik_pulse
+  DATABASE_URL_CITIZEN: postgres://np_citizen:${NP_DB_PASSWORD_CITIZEN:?}@db:5432/nagrik_pulse
 
 services:
   db:
@@ -57,6 +58,7 @@ services:
       NP_DB_PASSWORD_AUDIT: ${NP_DB_PASSWORD_AUDIT:?}
       NP_DB_PASSWORD_RELAY: ${NP_DB_PASSWORD_RELAY:?}
       NP_DB_PASSWORD_REGISTRY: ${NP_DB_PASSWORD_REGISTRY:?}
+      NP_DB_PASSWORD_CITIZEN: ${NP_DB_PASSWORD_CITIZEN:?}
     depends_on: { db: { condition: service_healthy } }
     networks: [internal]
     read_only: true
@@ -78,6 +80,13 @@ services:
       RATE_LIMIT_PER_IP_PER_MIN: ${NP_RATE_LIMIT_PER_IP_PER_MIN:-600}
       FIELD_ENCRYPTION_KEYS: ${NP_FIELD_ENCRYPTION_KEYS:?}
       FIELD_ENCRYPTION_ACTIVE_KEY: ${NP_FIELD_ENCRYPTION_ACTIVE_KEY:?}
+      OTP_TTL_SECONDS: ${NP_OTP_TTL_SECONDS:-300}
+      OTP_MAX_ATTEMPTS: ${NP_OTP_MAX_ATTEMPTS:-5}
+      CITIZEN_SESSION_IDLE_MINUTES: ${NP_CITIZEN_SESSION_IDLE_MINUTES:-30}
+      CITIZEN_SESSION_ABSOLUTE_HOURS: ${NP_CITIZEN_SESSION_ABSOLUTE_HOURS:-72}
+      SMS_PROVIDER: ${NP_SMS_PROVIDER:?}
+      SMS_WEBHOOK_URL: ${NP_SMS_WEBHOOK_URL:-}
+      SMS_WEBHOOK_SECRET: ${NP_SMS_WEBHOOK_SECRET:-}
     depends_on: { migrate: { condition: service_completed_successfully } }
     networks: [internal]
 

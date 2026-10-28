@@ -136,6 +136,20 @@ Every failure carries one of these codes in the API response (`error.code`), in 
 | `NP-REG-0005` | 409 | info | This service code already exists here. | यह सेवा कोड यहाँ पहले से मौजूद है। |
 | `NP-REG-0006` | 409 | info | This post already has a current holder. End that assignment first. | इस पद पर पहले से कोई पदधारी है। पहले उसकी नियुक्ति समाप्त करें। |
 
+## CIT
+
+| Code | HTTP | Log level | English | Hindi |
+| --- | --- | --- | --- | --- |
+| `NP-CIT-0001` | 403 | info | Citizen self-service is not switched on here yet. | नागरिक स्व-सेवा अभी यहाँ सक्रिय नहीं है। |
+| `NP-CIT-0002` | 400 | info | Enter a valid 10-digit mobile number. | एक मान्य 10 अंकों का मोबाइल नंबर दर्ज करें। |
+| `NP-CIT-0003` | 401 | warn | The code is incorrect or has expired. Request a new one. | कोड गलत है या समाप्त हो गया है। नया कोड माँगें। |
+| `NP-CIT-0004` | 429 | warn | Too many attempts for this code. Request a new one. | इस कोड के लिए बहुत अधिक प्रयास। नया कोड माँगें। |
+| `NP-CIT-0005` | 403 | warn | This citizen account is disabled. | यह नागरिक खाता निष्क्रिय है। |
+| `NP-CIT-0006` | 401 | info | Your session has expired. Please verify your mobile number again. | आपका सत्र समाप्त हो गया है। कृपया अपना मोबाइल नंबर फिर से सत्यापित करें। |
+| `NP-CIT-0007` | 401 | warn | This session was signed out. | यह सत्र साइन आउट कर दिया गया था। |
+| `NP-CIT-0008` | 401 | info | Please verify your mobile number to continue. | जारी रखने के लिए कृपया अपना मोबाइल नंबर सत्यापित करें। |
+| `NP-CIT-0009` | 503 | error | Could not send the verification code right now. Please try again shortly. | अभी सत्यापन कोड नहीं भेजा जा सका। कृपया थोड़ी देर बाद प्रयास करें। |
+
 ## Audit ledger
 
 | Code | HTTP | Log level | English | Hindi |

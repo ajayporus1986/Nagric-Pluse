@@ -96,6 +96,14 @@ export function generateOneTimePassword(): string {
   return out;
 }
 
+/**
+ * Generates a numeric one-time code (e.g. an SMS OTP), zero-padded to
+ * `digits`. Uses randomInt for unbiased digits, not Math.random.
+ */
+export function generateNumericOtp(digits = 6): string {
+  return randomInt(10 ** digits).toString().padStart(digits, '0');
+}
+
 // ---------------------------------------------------------------------------
 // Field encryption (AES-256-GCM with key ring)
 // ---------------------------------------------------------------------------

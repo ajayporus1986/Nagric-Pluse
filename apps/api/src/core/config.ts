@@ -31,6 +31,7 @@ const schema = z
     DATABASE_URL_IAM: z.string().url().optional(),
     DATABASE_URL_AUDIT: z.string().url().optional(),
     DATABASE_URL_REGISTRY: z.string().url().optional(),
+    DATABASE_URL_CITIZEN: z.string().url().optional(),
     DB_POOL_MAX: z.coerce.number().int().min(1).max(200).default(20),
     DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(100).max(120_000).default(10_000),
 
@@ -53,18 +54,36 @@ const schema = z
     RATE_LIMIT_PER_IP_PER_MIN: z.coerce.number().int().min(60).max(100_000).default(600),
 
     // Change requests expire if not decided in this many days.
-    CHANGE_REQUEST_TTL_DAYS: z.coerce.number().int().min(1).max(30).default(7)
+    CHANGE_REQUEST_TTL_DAYS: z.coerce.number().int().min(1).max(30).default(7),
+
+    // Citizen OTP sign-in. Never hardcoded: an operator may need a longer
+    // window for low-connectivity areas, or stricter limits under abuse.
+    OTP_TTL_SECONDS: z.coerce.number().int().min(30).max(900).default(300),
+    OTP_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(5),
+    CITIZEN_SESSION_IDLE_MINUTES: z.coerce.number().int().min(5).max(240).default(30),
+    CITIZEN_SESSION_ABSOLUTE_HOURS: z.coerce.number().int().min(1).max(168).default(72),
+    // How the OTP is actually delivered. "console" only logs it (dev/test);
+    // "webhook" POSTs to the operator's own SMS-gateway bridge. See
+    // citizen/otp-sender.ts for why no vendor SDK is wired in directly.
+    SMS_PROVIDER: z.enum(['console', 'webhook']).default('console'),
+    SMS_WEBHOOK_URL: z.string().url().optional(),
+    SMS_WEBHOOK_SECRET: z.string().min(16).optional()
   })
   .superRefine((c, ctx) => {
     // Production must use one database role per module, never a shared URL.
     if (c.NODE_ENV === 'production') {
-      for (const k of ['DATABASE_URL_PLATFORM', 'DATABASE_URL_IAM', 'DATABASE_URL_AUDIT', 'DATABASE_URL_REGISTRY'] as const) {
+      for (const k of ['DATABASE_URL_PLATFORM', 'DATABASE_URL_IAM', 'DATABASE_URL_AUDIT', 'DATABASE_URL_REGISTRY', 'DATABASE_URL_CITIZEN'] as const) {
         if (!c[k]) ctx.addIssue({ code: 'custom', path: [k], message: 'required in production' });
       }
       if (!c.COOKIE_SECURE) ctx.addIssue({ code: 'custom', path: ['COOKIE_SECURE'], message: 'must be true in production' });
       if (!c.PUBLIC_ORIGIN.startsWith('https://')) ctx.addIssue({ code: 'custom', path: ['PUBLIC_ORIGIN'], message: 'must be https in production' });
-    } else if (!c.DATABASE_URL && !(c.DATABASE_URL_PLATFORM && c.DATABASE_URL_IAM && c.DATABASE_URL_AUDIT && c.DATABASE_URL_REGISTRY)) {
+      // The console OTP sender only logs the code: never acceptable once real citizens use it.
+      if (c.SMS_PROVIDER === 'console') ctx.addIssue({ code: 'custom', path: ['SMS_PROVIDER'], message: 'console stub cannot be used in production; set webhook' });
+    } else if (!c.DATABASE_URL && !(c.DATABASE_URL_PLATFORM && c.DATABASE_URL_IAM && c.DATABASE_URL_AUDIT && c.DATABASE_URL_REGISTRY && c.DATABASE_URL_CITIZEN)) {
       ctx.addIssue({ code: 'custom', path: ['DATABASE_URL'], message: 'set DATABASE_URL or all per-module URLs' });
+    }
+    if (c.SMS_PROVIDER === 'webhook' && (!c.SMS_WEBHOOK_URL || !c.SMS_WEBHOOK_SECRET)) {
+      ctx.addIssue({ code: 'custom', path: ['SMS_WEBHOOK_URL'], message: 'SMS_WEBHOOK_URL and SMS_WEBHOOK_SECRET are required when SMS_PROVIDER=webhook' });
     }
     // The active key id must exist in the keyring.
     const ids = c.FIELD_ENCRYPTION_KEYS.map((k) => k.split(':')[0]);
@@ -76,7 +95,7 @@ const schema = z
 /** Validated configuration object. */
 export type Config = z.output<typeof schema> & {
   /** Resolved connection string per module (falls back to DATABASE_URL in dev/test). */
-  db: { platform: string; iam: string; audit: string; registry: string };
+  db: { platform: string; iam: string; audit: string; registry: string; citizen: string };
 };
 
 /**
@@ -98,7 +117,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       platform: c.DATABASE_URL_PLATFORM ?? fallback,
       iam: c.DATABASE_URL_IAM ?? fallback,
       audit: c.DATABASE_URL_AUDIT ?? fallback,
-      registry: c.DATABASE_URL_REGISTRY ?? fallback
+      registry: c.DATABASE_URL_REGISTRY ?? fallback,
+      citizen: c.DATABASE_URL_CITIZEN ?? fallback
     }
   };
 }
@@ -120,7 +140,8 @@ export function describeConfig(c: Config): Record<string, unknown> {
     publicOrigin: c.PUBLIC_ORIGIN,
     cookieSecure: c.COOKIE_SECURE,
     trustProxy: c.TRUST_PROXY,
-    db: { platform: host(c.db.platform), iam: host(c.db.iam), audit: host(c.db.audit), registry: host(c.db.registry) },
+    db: { platform: host(c.db.platform), iam: host(c.db.iam), audit: host(c.db.audit), registry: host(c.db.registry), citizen: host(c.db.citizen) },
+    smsProvider: c.SMS_PROVIDER,
     sharedDbUrl: !c.DATABASE_URL_PLATFORM,
     encryptionKeyIds: c.FIELD_ENCRYPTION_KEYS.map((k) => k.split(':')[0]),
     activeKey: c.FIELD_ENCRYPTION_ACTIVE_KEY

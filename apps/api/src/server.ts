@@ -9,6 +9,7 @@ import { loadConfig, describeConfig } from './core/config.js';
 import { createLogger } from './core/logger.js';
 import { isAppError } from './core/errors.js';
 import { closePools, createPools } from './db/pools.js';
+import { ConsoleOtpSender, WebhookOtpSender, type OtpSender } from './citizen/otp-sender.js';
 import { buildApp } from './http/app.js';
 import { ALL_MANIFESTS } from './modules/manifests.js';
 import { registerManifests } from './platform/registry.js';
@@ -38,8 +39,10 @@ async function main(): Promise<void> {
   await registerManifests(pools.platform, ALL_MANIFESTS, log);
   const policy = new PolicyService(pools.platform, cfg.db.platform, log);
   await policy.start();
+  // Chosen once at startup from SMS_PROVIDER; see citizen/otp-sender.ts for why there is no direct gateway SDK.
+  const otpSender: OtpSender = cfg.SMS_PROVIDER === 'webhook' ? new WebhookOtpSender(cfg.SMS_WEBHOOK_URL!, cfg.SMS_WEBHOOK_SECRET!, log) : new ConsoleOtpSender(log);
 
-  const app = await buildApp({ cfg, log, pools, policy, ring }, registerRoutes);
+  const app = await buildApp({ cfg, log, pools, policy, ring, otpSender }, registerRoutes);
   await app.listen({ host: cfg.HOST, port: cfg.PORT });
 
   // Graceful shutdown: stop accepting, finish in-flight requests, close pools.

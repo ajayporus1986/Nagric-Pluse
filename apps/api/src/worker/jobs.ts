@@ -7,6 +7,7 @@
  *   signCheckpoint    Ed25519-signs the latest ledger hash periodically
  *   expireRecords     expires stale change requests and kill switches
  *   cleanupIam        deletes long-expired sessions and old rate-limit windows
+ *   cleanupCitizen    same, for citizen sessions, rate limits and spent OTP challenges
  */
 import type { KeyObject } from 'node:crypto';
 import type pg from 'pg';
@@ -14,7 +15,7 @@ import type { Logger } from 'pino';
 import { signCheckpoint } from '../audit/checkpoint.js';
 
 /** Advisory lock keys (arbitrary constants, one per job). */
-const LOCK = { relay: 7_310_001, checkpoint: 7_310_002, expire: 7_310_003, cleanup: 7_310_004 };
+const LOCK = { relay: 7_310_001, checkpoint: 7_310_002, expire: 7_310_003, cleanup: 7_310_004, cleanupCitizen: 7_310_005 };
 
 /** Runs `fn` in a READ COMMITTED transaction if the advisory lock is free; returns undefined if skipped. */
 async function exclusive<T>(pool: pg.Pool, lockKey: number, fn: (c: pg.PoolClient) => Promise<T>): Promise<T | undefined> {
@@ -41,7 +42,8 @@ async function exclusive<T>(pool: pg.Pool, lockKey: number, fn: (c: pg.PoolClien
 const OUTBOXES = [
   { source: 'platform', table: 'platform.audit_outbox' },
   { source: 'iam', table: 'iam.audit_outbox' },
-  { source: 'registry', table: 'registry.audit_outbox' }
+  { source: 'registry', table: 'registry.audit_outbox' },
+  { source: 'citizen', table: 'citizen.audit_outbox' }
 ] as const;
 
 /**
@@ -138,4 +140,16 @@ export async function cleanupIam(iamPool: pg.Pool): Promise<{ sessions: number; 
     return { sessions: s.rowCount ?? 0, rateLimits: rl.rowCount ?? 0 };
   });
   return r ?? { sessions: 0, rateLimits: 0 };
+}
+
+/** Deletes expired citizen sessions, old rate-limit windows, and OTP challenges that can no longer be used. */
+export async function cleanupCitizen(citizenPool: pg.Pool): Promise<{ sessions: number; rateLimits: number; otpChallenges: number }> {
+  const r = await exclusive(citizenPool, LOCK.cleanupCitizen, async (c) => {
+    const s = await c.query(`DELETE FROM citizen.sessions WHERE absolute_expires_at < now() - interval '30 days'`);
+    const rl = await c.query(`DELETE FROM citizen.rate_limits WHERE window_start < now() - interval '1 day'`);
+    // A challenge is useless once consumed or well past its expiry; keep a short tail for abuse investigation.
+    const otp = await c.query(`DELETE FROM citizen.otp_challenges WHERE consumed_at IS NOT NULL OR expires_at < now() - interval '1 day'`);
+    return { sessions: s.rowCount ?? 0, rateLimits: rl.rowCount ?? 0, otpChallenges: otp.rowCount ?? 0 };
+  });
+  return r ?? { sessions: 0, rateLimits: 0, otpChallenges: 0 };
 }

@@ -116,6 +116,17 @@ export const ERRORS = {
   'NP-REG-0005': { http: 409, level: 'info', en: 'This service code already exists here.', hi: 'यह सेवा कोड यहाँ पहले से मौजूद है।' },
   'NP-REG-0006': { http: 409, level: 'info', en: 'This post already has a current holder. End that assignment first.', hi: 'इस पद पर पहले से कोई पदधारी है। पहले उसकी नियुक्ति समाप्त करें।' },
 
+  // ---- Citizen identity (CIT) -----------------------------------------------
+  'NP-CIT-0001': { http: 403, level: 'info', en: 'Citizen self-service is not switched on here yet.', hi: 'नागरिक स्व-सेवा अभी यहाँ सक्रिय नहीं है।' },
+  'NP-CIT-0002': { http: 400, level: 'info', en: 'Enter a valid 10-digit mobile number.', hi: 'एक मान्य 10 अंकों का मोबाइल नंबर दर्ज करें।' },
+  'NP-CIT-0003': { http: 401, level: 'warn', en: 'The code is incorrect or has expired. Request a new one.', hi: 'कोड गलत है या समाप्त हो गया है। नया कोड माँगें।' },
+  'NP-CIT-0004': { http: 429, level: 'warn', en: 'Too many attempts for this code. Request a new one.', hi: 'इस कोड के लिए बहुत अधिक प्रयास। नया कोड माँगें।' },
+  'NP-CIT-0005': { http: 403, level: 'warn', en: 'This citizen account is disabled.', hi: 'यह नागरिक खाता निष्क्रिय है।' },
+  'NP-CIT-0006': { http: 401, level: 'info', en: 'Your session has expired. Please verify your mobile number again.', hi: 'आपका सत्र समाप्त हो गया है। कृपया अपना मोबाइल नंबर फिर से सत्यापित करें।' },
+  'NP-CIT-0007': { http: 401, level: 'warn', en: 'This session was signed out.', hi: 'यह सत्र साइन आउट कर दिया गया था।' },
+  'NP-CIT-0008': { http: 401, level: 'info', en: 'Please verify your mobile number to continue.', hi: 'जारी रखने के लिए कृपया अपना मोबाइल नंबर सत्यापित करें।' },
+  'NP-CIT-0009': { http: 503, level: 'error', en: 'Could not send the verification code right now. Please try again shortly.', hi: 'अभी सत्यापन कोड नहीं भेजा जा सका। कृपया थोड़ी देर बाद प्रयास करें।' },
+
   // ---- Audit (AUDIT) -------------------------------------------------------
   'NP-AUDIT-0001': { http: 500, level: 'fatal', en: 'The audit log failed an integrity check.', hi: 'ऑडिट लॉग अखंडता जाँच में विफल रहा।' },
   'NP-AUDIT-0002': { http: 500, level: 'error', en: 'The action could not be recorded in the audit log, so it was not performed.', hi: 'कार्य ऑडिट लॉग में दर्ज नहीं हो सका, इसलिए नहीं किया गया।' },
