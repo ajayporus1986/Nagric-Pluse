@@ -13,6 +13,7 @@ import { registerCitizenRoutes } from './citizen/routes.js';
 import { registerOrgRoutes } from './org/routes.js';
 import { registerIntakeRoutes } from './intake/routes.js';
 import { registerCaseRoutes } from './case/routes.js';
+import { registerAccountabilityRoutes } from './accountability/routes.js';
 
 export function registerRoutes(app: App, deps: AppDeps): void {
   registerSystemRoutes(app, deps);
@@ -25,4 +26,5 @@ export function registerRoutes(app: App, deps: AppDeps): void {
   registerOrgRoutes(app, deps);
   registerIntakeRoutes(app, deps);
   registerCaseRoutes(app, deps);
+  registerAccountabilityRoutes(app, deps);
 }

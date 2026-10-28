@@ -124,9 +124,9 @@ ul.plain { list-style: none; padding: 0; margin: 0; }
 .crumbs { line-height: 1.8; }
 
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 12px; flex-wrap: wrap; }
-.tabs a { padding: 8px 14px; color: var(--text); text-decoration: none; border-bottom: 3px solid transparent; border-radius: 6px 6px 0 0; transition: background 0.15s ease; }
-.tabs a:hover { background: var(--accent-soft); }
-.tabs a.active { border-bottom-color: var(--accent); font-weight: 600; color: var(--accent); }
+.tabs a, .tabs button { padding: 8px 14px; color: var(--text); text-decoration: none; border-bottom: 3px solid transparent; border-radius: 6px 6px 0 0; transition: background 0.15s ease; background: none; border-left: none; border-right: none; border-top: none; font: inherit; cursor: pointer; }
+.tabs a:hover, .tabs button:hover { background: var(--accent-soft); }
+.tabs a.active, .tabs button.active { border-bottom-color: var(--accent); font-weight: 600; color: var(--accent); }
 
 table { width: 100%; border-collapse: collapse; }
 td, th { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }

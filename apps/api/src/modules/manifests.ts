@@ -272,6 +272,79 @@ const RAW: unknown[] = [
         }
       }
     ]
+  },
+  {
+    id: 'accountability',
+    version: '0.1.0',
+    name: { en: 'Official accountability & leadership reporting', hi: 'अधिकारी जवाबदेही एवं नेतृत्व रिपोर्टिंग' },
+    realm: 'GOVERNMENT',
+    requires: ['platform', 'iam', 'org', 'registry', 'intake', 'case'],
+    features: [
+      {
+        // Office/process-level KPIs -- always computed, never gated (see
+        // migration header). Broadly viewable, same as the grievance list
+        // and responder inbox it is derived from.
+        code: 'accountability.dashboard',
+        name: { en: 'Leadership dashboard', hi: 'नेतृत्व डैशबोर्ड' },
+        actions: ['view'],
+        defaultGrants: ALL_STAFF_VIEW
+      },
+      {
+        // Person-level (officer) metrics -- evidence-gated at the data
+        // layer (accountability.person_metrics.evidence_met), and kept to a
+        // narrower audience than the office-level dashboard: oversight and
+        // leadership roles, not an officer's own peers.
+        code: 'accountability.officers',
+        name: { en: 'Officer-level metrics', hi: 'अधिकारी-स्तरीय मेट्रिक्स' },
+        actions: ['view'],
+        auditedActions: ['view'],
+        defaultGrants: {
+          DEPARTMENT_HEAD: ['view'], DISTRICT_MAGISTRATE: ['view'], AUTHORITY_CEO: ['view'],
+          STATE_LEADERSHIP: ['view'], NATIONAL_LEADERSHIP: ['view'], INTEGRITY_REVIEWER: ['view'],
+          REALM_GOVERNOR: ['view'], OBSERVER: ['view'], DATA_PROTECTION_OFFICER: ['view'], PLATFORM_OPERATOR: ['view']
+        }
+      },
+      {
+        // Due process: notice -> officer's own reply -> independent review
+        // (Integrity Reviewer) -> appeal. 'create' issues a notice,
+        // 'update' covers the named officer's own reply/appeal (checked in
+        // the route, not by role alone), 'approve' is the reviewer's sign-off.
+        code: 'accountability.notices',
+        name: { en: 'Due-process notices', hi: 'नियत-प्रक्रिया नोटिस' },
+        actions: ['view', 'create', 'update', 'approve'],
+        auditedActions: ['create', 'update', 'approve'],
+        defaultGrants: {
+          ...ALL_STAFF_VIEW,
+          ASSISTED_AGENT: ['view', 'update'],
+          OFFICER: ['view', 'update'],
+          OFFICE_HEAD: ['view', 'update'],
+          DEPARTMENT_HEAD: ['view', 'create', 'update'],
+          DISTRICT_MAGISTRATE: ['view', 'create', 'update'],
+          AUTHORITY_CEO: ['view', 'create', 'update'],
+          INTEGRITY_REVIEWER: ['view', 'create', 'approve']
+        }
+      },
+      {
+        // On-demand leadership pull: a logged, reason-coded request,
+        // restricted to the existing state/national leadership roles per
+        // the confirmed decision -- Lego's own node-hierarchy check means a
+        // role assigned at a STATE node already covers every district below
+        // it, so no extra authorization code is needed here.
+        code: 'accountability.pulls',
+        name: { en: 'Leadership data pulls', hi: 'नेतृत्व डेटा पुल' },
+        actions: ['view', 'create'],
+        auditedActions: ['create'],
+        defaultGrants: {
+          STATE_LEADERSHIP: ['view', 'create'],
+          NATIONAL_LEADERSHIP: ['view', 'create'],
+          DISTRICT_MAGISTRATE: ['view'],
+          REALM_GOVERNOR: ['view'],
+          OBSERVER: ['view'],
+          DATA_PROTECTION_OFFICER: ['view'],
+          PLATFORM_OPERATOR: ['view']
+        }
+      }
+    ]
   }
 ];
 

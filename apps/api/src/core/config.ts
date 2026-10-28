@@ -35,6 +35,7 @@ const schema = z
     DATABASE_URL_ORG: z.string().url().optional(),
     DATABASE_URL_INTAKE: z.string().url().optional(),
     DATABASE_URL_CASE: z.string().url().optional(),
+    DATABASE_URL_ACCOUNTABILITY: z.string().url().optional(),
     DB_POOL_MAX: z.coerce.number().int().min(1).max(200).default(20),
     DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(100).max(120_000).default(10_000),
 
@@ -76,12 +77,25 @@ const schema = z
     // confirmation window (how long a citizen has to confirm or dispute a
     // RESOLVED grievance before it auto-closes).
     CASE_SWEEP_INTERVAL_MS: z.coerce.number().int().min(10_000).max(3_600_000).default(300_000),
-    CASE_CLOSURE_CONFIRMATION_WINDOW_DAYS: z.coerce.number().int().min(1).max(60).default(7)
+    CASE_CLOSURE_CONFIRMATION_WINDOW_DAYS: z.coerce.number().int().min(1).max(60).default(7),
+
+    // Official accountability & leadership reporting (Phase 4). Rollup
+    // windows, the proxy evidence-gate thresholds documented in
+    // db/migrations/0015_accountability.sql, and the due-process reply
+    // window for a notice.
+    ACCOUNTABILITY_ROLLUP_WINDOW_DAYS: z.coerce.number().int().min(1).max(30).default(3),
+    ACCOUNTABILITY_PERSON_WINDOW_DAYS: z.coerce.number().int().min(7).max(180).default(30),
+    ACCOUNTABILITY_MIN_RESOLVED_CASES: z.coerce.number().int().min(1).max(1000).default(10),
+    ACCOUNTABILITY_MIN_DISTINCT_CITIZENS: z.coerce.number().int().min(1).max(1000).default(5),
+    ACCOUNTABILITY_NOTICE_REPLY_WINDOW_DAYS: z.coerce.number().int().min(1).max(60).default(14),
+    ACCOUNTABILITY_ROLLUP_INTERVAL_MS: z.coerce.number().int().min(60_000).max(21_600_000).default(3_600_000),
+    ACCOUNTABILITY_ALERT_INTERVAL_MS: z.coerce.number().int().min(10_000).max(3_600_000).default(300_000),
+    ACCOUNTABILITY_PUSH_INTERVAL_MS: z.coerce.number().int().min(60_000).max(21_600_000).default(3_600_000)
   })
   .superRefine((c, ctx) => {
     // Production must use one database role per module, never a shared URL.
     if (c.NODE_ENV === 'production') {
-      for (const k of ['DATABASE_URL_PLATFORM', 'DATABASE_URL_IAM', 'DATABASE_URL_AUDIT', 'DATABASE_URL_REGISTRY', 'DATABASE_URL_CITIZEN', 'DATABASE_URL_ORG', 'DATABASE_URL_INTAKE', 'DATABASE_URL_CASE'] as const) {
+      for (const k of ['DATABASE_URL_PLATFORM', 'DATABASE_URL_IAM', 'DATABASE_URL_AUDIT', 'DATABASE_URL_REGISTRY', 'DATABASE_URL_CITIZEN', 'DATABASE_URL_ORG', 'DATABASE_URL_INTAKE', 'DATABASE_URL_CASE', 'DATABASE_URL_ACCOUNTABILITY'] as const) {
         if (!c[k]) ctx.addIssue({ code: 'custom', path: [k], message: 'required in production' });
       }
       if (!c.COOKIE_SECURE) ctx.addIssue({ code: 'custom', path: ['COOKIE_SECURE'], message: 'must be true in production' });
@@ -90,7 +104,7 @@ const schema = z
       if (c.SMS_PROVIDER === 'console') ctx.addIssue({ code: 'custom', path: ['SMS_PROVIDER'], message: 'console stub cannot be used in production; set webhook' });
     } else if (
       !c.DATABASE_URL &&
-      !(c.DATABASE_URL_PLATFORM && c.DATABASE_URL_IAM && c.DATABASE_URL_AUDIT && c.DATABASE_URL_REGISTRY && c.DATABASE_URL_CITIZEN && c.DATABASE_URL_ORG && c.DATABASE_URL_INTAKE && c.DATABASE_URL_CASE)
+      !(c.DATABASE_URL_PLATFORM && c.DATABASE_URL_IAM && c.DATABASE_URL_AUDIT && c.DATABASE_URL_REGISTRY && c.DATABASE_URL_CITIZEN && c.DATABASE_URL_ORG && c.DATABASE_URL_INTAKE && c.DATABASE_URL_CASE && c.DATABASE_URL_ACCOUNTABILITY)
     ) {
       ctx.addIssue({ code: 'custom', path: ['DATABASE_URL'], message: 'set DATABASE_URL or all per-module URLs' });
     }
@@ -107,7 +121,7 @@ const schema = z
 /** Validated configuration object. */
 export type Config = z.output<typeof schema> & {
   /** Resolved connection string per module (falls back to DATABASE_URL in dev/test). */
-  db: { platform: string; iam: string; audit: string; registry: string; citizen: string; org: string; intake: string; case: string };
+  db: { platform: string; iam: string; audit: string; registry: string; citizen: string; org: string; intake: string; case: string; accountability: string };
 };
 
 /**
@@ -133,7 +147,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       citizen: c.DATABASE_URL_CITIZEN ?? fallback,
       org: c.DATABASE_URL_ORG ?? fallback,
       intake: c.DATABASE_URL_INTAKE ?? fallback,
-      case: c.DATABASE_URL_CASE ?? fallback
+      case: c.DATABASE_URL_CASE ?? fallback,
+      accountability: c.DATABASE_URL_ACCOUNTABILITY ?? fallback
     }
   };
 }
@@ -157,7 +172,7 @@ export function describeConfig(c: Config): Record<string, unknown> {
     trustProxy: c.TRUST_PROXY,
     db: {
       platform: host(c.db.platform), iam: host(c.db.iam), audit: host(c.db.audit), registry: host(c.db.registry),
-      citizen: host(c.db.citizen), org: host(c.db.org), intake: host(c.db.intake), case: host(c.db.case)
+      citizen: host(c.db.citizen), org: host(c.db.org), intake: host(c.db.intake), case: host(c.db.case), accountability: host(c.db.accountability)
     },
     smsProvider: c.SMS_PROVIDER,
     sharedDbUrl: !c.DATABASE_URL_PLATFORM,

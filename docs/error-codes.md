@@ -172,6 +172,17 @@ Every failure carries one of these codes in the API response (`error.code`), in 
 | `NP-CASE-0004` | 403 | info | Only the citizen who filed this grievance may confirm or dispute its closure. | इस शिकायत को दर्ज करने वाला नागरिक ही इसके समापन की पुष्टि या विवाद कर सकता है। |
 | `NP-CASE-0005` | 410 | info | The window to confirm or dispute this closure has already passed. | इस समापन की पुष्टि या विवाद करने की समय-सीमा समाप्त हो चुकी है। |
 
+## Official accountability & leadership reporting
+
+| Code | HTTP | Log level | English | Hindi |
+| --- | --- | --- | --- | --- |
+| `NP-ACC-0001` | 404 | info | Notice not found. | नोटिस नहीं मिला। |
+| `NP-ACC-0002` | 400 | info | That person cannot be given a notice: no such active staff account. | उस व्यक्ति को नोटिस नहीं दिया जा सकता: ऐसा कोई सक्रिय कर्मचारी खाता नहीं है। |
+| `NP-ACC-0003` | 409 | info | This notice is not in a state that allows that action. | यह नोटिस इस कार्रवाई की अनुमति देने वाली स्थिति में नहीं है। |
+| `NP-ACC-0004` | 403 | info | Only the officer this notice concerns may reply to or appeal it. | इस नोटिस से संबंधित अधिकारी ही इसका उत्तर या अपील दे सकता है। |
+| `NP-ACC-0005` | 410 | info | The window to reply to this notice has already passed. | इस नोटिस का उत्तर देने की समय-सीमा समाप्त हो चुकी है। |
+| `NP-ACC-0006` | 400 | info | Unknown or inactive pull reason code. | अज्ञात या निष्क्रिय पुल कारण कोड। |
+
 ## Citizen identity
 
 | Code | HTTP | Log level | English | Hindi |

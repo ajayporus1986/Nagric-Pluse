@@ -244,6 +244,83 @@ export interface CaseAssignment {
   current: string | null;
 }
 
+export interface ProcessMetricRow {
+  nodeId: string;
+  entityId: string | null;
+  entityNameEn: string | null;
+  entityNameHi: string | null;
+  metricDate: string;
+  filedCount: number;
+  resolvedCount: number;
+  closedCount: number;
+  reopenedCount: number;
+  escalatedCount: number;
+  slaMetCount: number;
+  slaBreachedCount: number;
+  avgTimeToResolutionHours: number | null;
+  avgTimeToFirstAckHours: number | null;
+  citizenConfirmedCount: number;
+  computedAt: string;
+}
+
+export interface OfficerMetricRow {
+  assigneeUserId: string;
+  assigneeName: string;
+  nodeId: string;
+  windowDays: number;
+  assignedCount: number;
+  resolvedCount: number;
+  slaMetCount: number;
+  slaBreachedCount: number;
+  avgTimeToResolutionHours: number | null;
+  distinctCitizens: number;
+  computedAt: string;
+}
+
+export interface NoticeListItem {
+  id: string;
+  nodeId: string;
+  assigneeUserId: string;
+  assigneeName: string;
+  metricRef: string;
+  issuedBy: string;
+  issuedAt: string;
+  replyDueAt: string;
+  repliedAt: string | null;
+  reviewStatus: string;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+}
+
+export interface NoticeDetail {
+  id: string;
+  nodeId: string;
+  assigneeUserId: string;
+  assigneeName: string;
+  metricRef: string;
+  allegationSummary: string;
+  issuedBy: string;
+  issuedAt: string;
+  replyDueAt: string;
+  replyText: string | null;
+  repliedAt: string | null;
+  reviewStatus: string;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  reviewNote: string | null;
+  appealNote: string | null;
+  appealedAt: string | null;
+}
+
+export interface LeadershipPull {
+  id: string;
+  requestedBy: string;
+  nodeId: string;
+  reasonCode: string;
+  note: string | null;
+  requestedAt: string;
+}
+
 export interface AuditEvent {
   seq: string;
   occurredAt: string;

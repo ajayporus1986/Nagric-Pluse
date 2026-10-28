@@ -6,8 +6,8 @@
 | --- | --- | --- |
 | `db` | `postgres:16` | — |
 | `migrate` (one-shot) | `api` image, `migrate.js` then `db-roles.js` | db as schema owner |
-| `api` | `api` image, `dist/server.js` | db as `np_platform`, `np_iam`, `np_audit`, `np_registry`, `np_citizen`, `np_org`, `np_intake`, `np_case` |
-| `worker` | `api` image, `dist/worker/main.js` | db as `np_relay`, `np_platform`, `np_iam`, `np_citizen`, `np_org`, `np_intake`, `np_case` |
+| `api` | `api` image, `dist/server.js` | db as `np_platform`, `np_iam`, `np_audit`, `np_registry`, `np_citizen`, `np_org`, `np_intake`, `np_case`, `np_accountability` |
+| `worker` | `api` image, `dist/worker/main.js` | db as `np_relay`, `np_platform`, `np_iam`, `np_citizen`, `np_org`, `np_intake`, `np_case`, `np_accountability` |
 | `web` | nginx serving the console, proxying `/api` | api |
 
 The API is stateless: run as many replicas as needed behind the web tier. Sessions, rate limits and policy live in Postgres; replicas pick up policy changes within about 100 ms through `LISTEN/NOTIFY`.
@@ -49,6 +49,7 @@ Migrations create NOLOGIN group roles with least-privilege grants. `db-roles.js`
 | `np_org` | `np_org_rw` | the org directory (`org.entities`): departments, statutory authorities, SPVs, SEZ offices and other service providers that `registry.services` and future modules reference |
 | `np_intake` | `np_intake_rw` | grievance intake (`intake.grievances`, `intake.grievance_events`, `intake.grievance_departments`): citizen/business/anonymous filings, their status history, every department named at filing time (single-window routing), and a read-only lookup into `registry.services`, `org.entities` and `citizen.citizens` needed at filing time |
 | `np_case` | `np_case_rw` | case engine (`"case".assignments`, `"case".sla_escalations`, `"case".closure_confirmations`): staff assignment and history, SLA-breach escalation and citizen closure confirmation, plus narrow column-scoped writes into `intake.grievances` (`status`, `resolved_at`, `updated_at`, `escalation_level`) and inserts into `intake.grievance_events` for exactly those automated transitions, and a read-only status check into `iam.users` (`id`, `display_name`, `status` only) when assigning a case |
+| `np_accountability` | `np_accountability_rw` | officer/department KPI-KRI accountability and leadership reporting (`accountability.process_metrics_daily`, `accountability.person_metrics`, `accountability.notices`, `accountability.pull_requests`, `accountability.monthly_pushes`, `accountability.sla_alerts`): daily rollups, evidence-gated officer snapshots, the due-process notice/reply/review/appeal flow, on-demand leadership pulls and monthly push logs, plus narrow, **read-only** column-scoped grants into `intake.grievances`/`intake.grievance_events`, `"case".assignments`/`"case".sla_escalations`/`"case".closure_confirmations`, `iam.users` (`id`, `display_name`, `status` only), `org.entities`, and `platform.scope_nodes`/`classification_axes`/`classification_values` — a lower-risk variant of the case engine's cross-module grant above, since accountability never writes into another module's tables |
 
 No service role can UPDATE or DELETE the audit ledger; triggers refuse it even for the owner.
 
@@ -60,6 +61,15 @@ In addition to the audit-outbox relay (per module, draining `*.audit_outbox` int
 | --- | --- | --- |
 | `escalateOverdueCases` | `CASE_SWEEP_INTERVAL_MS` (default 5 min) | Bumps `intake.grievances.escalation_level` by 1 for every open grievance past its `sla_due_at`, up to a cap (default 3), logging each step to `"case".sla_escalations`. Re-escalates every tick while a case remains open and overdue, until the cap. |
 | `sweepClosureConfirmations` | same tick as above | Opens a confirmation window (`"case".closure_confirmations`) for every grievance that just turned `RESOLVED`, and auto-closes (`RESOLVED` → `CLOSED`) any window that lapsed with no citizen response after `CASE_CLOSURE_CONFIRMATION_WINDOW_DAYS` (default 7). |
+
+The accountability module adds four more:
+
+| Job | Interval | Does |
+| --- | --- | --- |
+| `rollupProcessMetrics` | `ACCOUNTABILITY_ROLLUP_INTERVAL_MS` (default 1 hr) | Upserts `accountability.process_metrics_daily` per node × department × day over a rolling window (`ACCOUNTABILITY_ROLLUP_WINDOW_DAYS`, default 3): filed/resolved/closed/reopened/escalated counts, SLA-met/breached counts, average resolution and first-acknowledgement time, and citizen-confirmed closures. A department-less "all departments" row per node×day upserts via an expression index so `entity_id IS NULL` still participates in `ON CONFLICT`. |
+| `rollupPersonMetrics` | same interval | Recomputes each officer's rolling snapshot (`ACCOUNTABILITY_PERSON_WINDOW_DAYS`, default 30 days) in `accountability.person_metrics`, keyed by `assignee_user_id`. `evidence_met` is computed and stored by this job itself (case volume ≥ `ACCOUNTABILITY_MIN_RESOLVED_CASES`, distinct-citizen diversity ≥ `ACCOUNTABILITY_MIN_DISTINCT_CITIZENS`) — a documented proxy for the Blueprint §9.6 integrity/corroboration gate, which needs an Intelligence/Integrity module this codebase has not built; tighten, never loosen, this proxy once that module exists. |
+| `fireSlaAlerts` | `ACCOUNTABILITY_ALERT_INTERVAL_MS` (default 5 min) | Idempotently inserts into `accountability.sla_alerts` (`UNIQUE(grievance_id, escalation_level)`) off `"case".sla_escalations` for immediate SLA-breach/escalation alerting. |
+| `pushMonthlyRollup` | `ACCOUNTABILITY_PUSH_INTERVAL_MS` (default 1 hr) | Idempotently materializes and logs (`accountability.monthly_pushes`, `UNIQUE(node_id, period)`) a per-district snapshot of the last completed month. Materialize-and-log only for now — there is no state/national hub in this codebase yet to push to. |
 
 ## Logs and debugging
 

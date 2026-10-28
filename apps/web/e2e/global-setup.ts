@@ -43,7 +43,7 @@ export default async function globalSetup(): Promise<void> {
   await admin.query(`CREATE DATABASE ${DB}`);
   const pw = randomBytes(12).toString('hex');
   const roles = {
-    platform: 'np_platform_rw', iam: 'np_iam_rw', audit: 'np_audit_reader', relay: 'np_audit_relay', registry: 'np_registry_rw', citizen: 'np_citizen_rw', org: 'np_org_rw', intake: 'np_intake_rw', case: 'np_case_rw'
+    platform: 'np_platform_rw', iam: 'np_iam_rw', audit: 'np_audit_reader', relay: 'np_audit_relay', registry: 'np_registry_rw', citizen: 'np_citizen_rw', org: 'np_org_rw', intake: 'np_intake_rw', case: 'np_case_rw', accountability: 'np_accountability_rw'
   } as const;
   const owner = new URL(adminUrl);
   owner.pathname = `/${DB}`;
@@ -91,7 +91,7 @@ export default async function globalSetup(): Promise<void> {
     ...process.env, NODE_ENV: 'test', LOG_LEVEL: 'debug', PORT: '8080', PUBLIC_ORIGIN: 'http://localhost:4173', COOKIE_SECURE: 'false',
     FIELD_ENCRYPTION_KEYS: `v1:${randomBytes(32).toString('base64')}`, FIELD_ENCRYPTION_ACTIVE_KEY: 'v1',
     DATABASE_URL_PLATFORM: urls.platform, DATABASE_URL_IAM: urls.iam, DATABASE_URL_AUDIT: urls.audit, DATABASE_URL_AUDIT_RELAY: urls.relay, DATABASE_URL_REGISTRY: urls.registry,
-    DATABASE_URL_CITIZEN: urls.citizen, DATABASE_URL_ORG: urls.org, DATABASE_URL_INTAKE: urls.intake, DATABASE_URL_CASE: urls.case, SMS_PROVIDER: 'console',
+    DATABASE_URL_CITIZEN: urls.citizen, DATABASE_URL_ORG: urls.org, DATABASE_URL_INTAKE: urls.intake, DATABASE_URL_CASE: urls.case, DATABASE_URL_ACCOUNTABILITY: urls.accountability, SMS_PROVIDER: 'console',
     AUDIT_SIGNING_KEY_FILE: keyFile, CHECKPOINT_MIN_ROWS: '1', CHECKPOINT_TICK_MS: '2000', CHECKPOINT_MAX_AGE_MS: '10000', RELAY_INTERVAL_MS: '300'
   };
   const start = (name: string, cmd: string, args: string[], cwd: string) => {
